@@ -1,13 +1,13 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
-import { ArrowUpDown, Filter, Rows3, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
+import { ArrowUpDown, ListFilter } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { INVENTORY_COLS, RARITY_COLOR, SLOT_LABEL } from "@/lib/game/constants";
+import { INVENTORY_COLS, RARITY_COLOR, RARITY_LABEL, SLOT_LABEL } from "@/lib/game/constants";
 import { canWearItem } from "@/lib/game/equipment";
 import { INVENTORY_SORT_LABEL, INVENTORY_SORT_MODES } from "@/lib/game/inventory";
 import { GEM_RANK_ACCENT } from "@/lib/game/workshop";
-import { EQUIP_SLOTS, type Item } from "@/lib/game/types";
+import { EQUIP_SLOTS, RARITIES, type Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { ItemGlyph } from "./EquipmentDoll";
@@ -284,37 +284,94 @@ export function InventoryFilters() {
   const filterRarity = useUiStore((s) => s.filterRarity);
   const setFilterSlot = useUiStore((s) => s.setFilterSlot);
   const setFilterRarity = useUiStore((s) => s.setFilterRarity);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const active = filterSlot !== "all" || filterRarity !== "all";
+  const activeCount = (filterSlot !== "all" ? 1 : 0) + (filterRarity !== "all" ? 1 : 0);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-      <Filter className="h-3.5 w-3.5 shrink-0 text-[#8aa0b4]" />
-      <select
-        value={filterSlot}
-        onChange={(e) => setFilterSlot(e.target.value as typeof filterSlot)}
-        className="es-select es-inv-control min-w-[7.5rem] px-2"
-        aria-label="Фильтр по слоту"
+    <div ref={box} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn("es-btn es-inv-control px-2", (open || active) && "es-btn-cyan")}
+        aria-expanded={open}
+        aria-label="Фильтр"
+        title="Фильтр: слот и грейд"
       >
-        <option value="all">Все слоты</option>
-        {EQUIP_SLOTS.map((s) => (
-          <option key={s} value={s}>
-            {SLOT_LABEL[s]}
-          </option>
-        ))}
-      </select>
-      <select
-        value={filterRarity}
-        onChange={(e) => setFilterRarity(e.target.value as typeof filterRarity)}
-        className="es-select es-inv-control min-w-[8rem] px-2"
-        aria-label="Фильтр по редкости"
-      >
-        <option value="all">Все грейды</option>
-        <option value="common">Обычный</option>
-        <option value="uncommon">Необычный</option>
-        <option value="rare">Редкий</option>
-        <option value="epic">Эпический</option>
-        <option value="legendary">Легендарный</option>
-        <option value="mythic">Мифический</option>
-      </select>
+        <ListFilter className="h-3.5 w-3.5" />
+        Фильтр
+        {active ? (
+          <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-black/80 px-0.5 text-[8px] font-bold leading-none text-white">
+            {activeCount}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="es-popover absolute left-0 z-40 mt-1.5 w-[232px] space-y-2.5 p-2.5">
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#8aa0b4]">Слот</div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setFilterSlot("all")}
+                className={cn("es-rarity-toggle", filterSlot === "all" && "is-on")}
+                aria-pressed={filterSlot === "all"}
+              >
+                Все
+              </button>
+              {EQUIP_SLOTS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setFilterSlot(s)}
+                  className={cn("es-rarity-toggle", filterSlot === s && "is-on")}
+                  aria-pressed={filterSlot === s}
+                >
+                  {SLOT_LABEL[s]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#8aa0b4]">Грейд</div>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                onClick={() => setFilterRarity("all")}
+                className={cn("es-rarity-toggle", filterRarity === "all" && "is-on")}
+                aria-pressed={filterRarity === "all"}
+              >
+                Все
+              </button>
+              {RARITIES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setFilterRarity(r)}
+                  className={cn("es-rarity-toggle", filterRarity === r && "is-on")}
+                  style={{
+                    color: RARITY_COLOR[r],
+                    borderColor: filterRarity === r ? RARITY_COLOR[r] : undefined,
+                  }}
+                  aria-pressed={filterRarity === r}
+                >
+                  {RARITY_LABEL[r]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -323,45 +380,51 @@ export function InventorySortControls() {
   const sortMode = useUiStore((s) => s.inventorySortMode);
   const setSortMode = useUiStore((s) => s.setInventorySortMode);
   const sortInventory = useGameStore((s) => s.sortInventory);
-  const compactInventory = useGameStore((s) => s.compactInventory);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-      <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[#8aa0b4]" />
-      <select
-        value={sortMode}
-        onChange={(e) => {
-          const mode = e.target.value as typeof sortMode;
-          setSortMode(mode);
-          sortInventory(mode);
-        }}
-        className="es-select es-inv-control min-w-[8.5rem] px-2"
-        aria-label="Сортировка"
-      >
-        {INVENTORY_SORT_MODES.map((mode) => (
-          <option key={mode} value={mode}>
-            {INVENTORY_SORT_LABEL[mode]}
-          </option>
-        ))}
-      </select>
+    <div ref={box} className="relative shrink-0">
       <button
         type="button"
-        onClick={() => sortInventory(sortMode)}
-        className="es-btn es-inv-control px-2.5"
-        title="Собрать предметы в начало сетки по выбранной сортировке"
+        onClick={() => setOpen((v) => !v)}
+        className={cn("es-btn es-inv-control h-7 w-7 px-0", open && "es-btn-cyan")}
+        aria-expanded={open}
+        aria-label={`Сортировка: ${INVENTORY_SORT_LABEL[sortMode]}`}
+        title={`Сортировка: ${INVENTORY_SORT_LABEL[sortMode]}`}
       >
-        <Sparkles className="h-3 w-3" />
-        Сорт
+        <ArrowUpDown className="h-3.5 w-3.5" />
       </button>
-      <button
-        type="button"
-        onClick={() => compactInventory()}
-        className="es-btn es-inv-control px-2.5"
-        title="Убрать пустые ячейки, порядок предметов не меняется"
-      >
-        <Rows3 className="h-3 w-3" />
-        Уплотнить
-      </button>
+      {open ? (
+        <div className="es-popover absolute left-0 z-40 mt-1.5 w-[168px] space-y-0.5 p-1.5">
+          {INVENTORY_SORT_MODES.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                setSortMode(mode);
+                sortInventory(mode);
+                setOpen(false);
+              }}
+              className={cn(
+                "es-btn es-inv-control h-7 w-full justify-start px-2",
+                mode === sortMode && "es-btn-cyan",
+              )}
+            >
+              {INVENTORY_SORT_LABEL[mode]}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
