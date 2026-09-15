@@ -13,6 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useGameStore } from "@/store/useGameStore";
 
 const BOOT_UI_TIMEOUT_MS = 16_000;
+const SAVE_HYDRATE_UI_TIMEOUT_MS = 5_000;
 
 export function GameShell() {
   const authReady = useAuthStore((s) => s.ready);
@@ -21,6 +22,18 @@ export function GameShell() {
   const classId = useGameStore((s) => s.character.classId);
   const [hydrated, setHydrated] = useState(false);
   const [bootStuck, setBootStuck] = useState(false);
+  const [saveStuck, setSaveStuck] = useState(false);
+  const [hydratedForAccount, setHydratedForAccount] = useState<string | null>(null);
+
+  // Reset boot gate during render when the account changes — never in an effect after
+  // GameTicker. Zustand persist rehydrate is sync (localStorage), so onReady can fire
+  // inside the child effect; a later parent effect that set hydrated=false left the
+  // splash stuck forever (finish already marked started).
+  if (accountId !== hydratedForAccount) {
+    setHydratedForAccount(accountId);
+    if (hydrated) setHydrated(false);
+    if (saveStuck) setSaveStuck(false);
+  }
 
   useEffect(() => {
     void useAuthStore.getState().hydrate();
@@ -36,6 +49,18 @@ export function GameShell() {
   }, [authReady]);
 
   useEffect(() => {
+    if (!accountId || hydrated) {
+      setSaveStuck(false);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setHydrated(true);
+      setSaveStuck(true);
+    }, SAVE_HYDRATE_UI_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [accountId, hydrated]);
+
+  useEffect(() => {
     const flush = () => flushCloudSave();
     window.addEventListener("pagehide", flush);
     window.addEventListener("beforeunload", flush);
@@ -45,23 +70,30 @@ export function GameShell() {
     };
   }, []);
 
-  useEffect(() => {
-    setHydrated(false);
-  }, [accountId]);
-
   const onReady = useCallback(() => {
-    const acc = useAuthStore.getState().account;
-    const ch = useGameStore.getState().character;
-    if (acc && ch.level === 1 && (ch.name === "Каэл" || !ch.name)) {
-      useGameStore.getState().renameCharacter(acc.name);
+    try {
+      const acc = useAuthStore.getState().account;
+      const ch = useGameStore.getState().character;
+      if (acc && ch.level === 1 && (ch.name === "Каэл" || !ch.name)) {
+        useGameStore.getState().renameCharacter(acc.name);
+      }
+    } catch (err) {
+      console.error("[GameShell] onReady", err);
     }
     setHydrated(true);
   }, []);
 
   const retryBoot = () => {
     setBootStuck(false);
+    setSaveStuck(false);
+    setHydrated(false);
     useAuthStore.setState({ ready: false, bootError: null });
     void useAuthStore.getState().hydrate();
+  };
+
+  const forceEnter = () => {
+    setSaveStuck(false);
+    setHydrated(true);
   };
 
   if (!authReady) {
@@ -84,7 +116,16 @@ export function GameShell() {
     <div className="relative z-10 flex h-dvh flex-col overflow-hidden bg-app">
       <GameTicker key={accountId} onReady={onReady} ticking={hydrated && !!classId} />
       {!hydrated ? (
-        <BootSplash />
+        <BootSplash
+          stuck={saveStuck}
+          message={
+            saveStuck
+              ? "Сохранение с сервера не ответило вовремя. Можно продолжить с локальным прогрессом."
+              : undefined
+          }
+          onRetry={saveStuck ? forceEnter : undefined}
+          retryLabel="Продолжить"
+        />
       ) : !classId ? (
         <ClassPicker />
       ) : (
@@ -109,10 +150,12 @@ function BootSplash({
   stuck,
   message,
   onRetry,
+  retryLabel = "Повторить",
 }: {
   stuck?: boolean;
   message?: string;
   onRetry?: () => void;
+  retryLabel?: string;
 }) {
   return (
     <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
@@ -121,7 +164,7 @@ function BootSplash({
       {message && <p className="max-w-sm text-sm leading-relaxed text-[var(--muted)]">{message}</p>}
       {stuck && onRetry && (
         <button type="button" onClick={onRetry} className="es-btn es-btn-amber mt-2 px-5 py-2.5 text-sm">
-          Повторить
+          {retryLabel}
         </button>
       )}
     </div>

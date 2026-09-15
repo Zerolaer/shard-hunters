@@ -23,27 +23,33 @@ export function GameTicker({
     const finish = () => {
       if (!alive || started) return;
       started = true;
-      onReadyRef.current();
+      try {
+        onReadyRef.current();
+      } catch (err) {
+        console.error("[GameTicker] onReady failed", err);
+      }
     };
 
-    // Always clear boot splash even if persist.rehydrate hangs.
-    const timeout = window.setTimeout(finish, 800);
-    const hardTimeout = window.setTimeout(finish, 4000);
-    const unsub = useGameStore.persist.onFinishHydration(finish);
+    // Defer so parent effects cannot undo a sync rehydrate's onReady in the same flush.
+    const softTimeout = window.setTimeout(finish, 50);
+    const hardTimeout = window.setTimeout(finish, 2500);
+    const unsub = useGameStore.persist.onFinishHydration(() => {
+      window.setTimeout(finish, 0);
+    });
 
-    void Promise.resolve(useGameStore.persist.rehydrate())
+    void Promise.resolve()
+      .then(() => useGameStore.persist.rehydrate())
       .catch((err) => {
         console.error("[GameTicker] rehydrate failed", err);
       })
       .finally(() => {
-        window.clearTimeout(timeout);
-        finish();
+        window.setTimeout(finish, 0);
       });
 
     return () => {
       alive = false;
       unsub();
-      window.clearTimeout(timeout);
+      window.clearTimeout(softTimeout);
       window.clearTimeout(hardTimeout);
     };
   }, []);

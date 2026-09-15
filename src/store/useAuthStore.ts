@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   flushCloudSave,
+  getSessionAccountId,
   pullCloudSaveIntoCache,
   readSessionHint,
   setSessionAccountId,
@@ -22,10 +23,16 @@ interface AuthStore {
   logout: () => Promise<void>;
 }
 
-async function activateAccount(account: AccountRecord) {
-  const previousId = readSessionHint();
-  setSessionAccountId(account.id);
-  await pullCloudSaveIntoCache(account.id, previousId);
+/** Pull cloud save into localStorage, then refresh the in-memory game store if still on this account. */
+async function syncCloudSave(accountId: string, previousAccountId: string | null) {
+  try {
+    await pullCloudSaveIntoCache(accountId, previousAccountId);
+    if (getSessionAccountId() === accountId) {
+      await useGameStore.persist.rehydrate();
+    }
+  } catch (err) {
+    console.error("[auth] cloud save sync failed", err);
+  }
 }
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
@@ -52,7 +59,9 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const account = await apiMe();
       if (account) {
-        await activateAccount(account);
+        const previousId = readSessionHint();
+        setSessionAccountId(account.id);
+        await syncCloudSave(account.id, previousId);
         set({ ready: true, bootError: null, accountId: account.id, account });
         return;
       }
@@ -77,23 +86,19 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   register: async (email, name, password) => {
     const result = await apiRegister(email, name, password);
     if (!result.ok) return { ok: false, message: result.message };
-    try {
-      await activateAccount(result.account);
-    } catch (err) {
-      console.error("[auth/register activate]", err);
-    }
+    const previousId = readSessionHint();
+    setSessionAccountId(result.account.id);
     set({ accountId: result.account.id, account: result.account, bootError: null, ready: true });
+    void syncCloudSave(result.account.id, previousId);
     return { ok: true };
   },
   login: async (email, password) => {
     const result = await apiLogin(email, password);
     if (!result.ok) return { ok: false, message: result.message };
-    try {
-      await activateAccount(result.account);
-    } catch (err) {
-      console.error("[auth/login activate]", err);
-    }
+    const previousId = readSessionHint();
+    setSessionAccountId(result.account.id);
     set({ accountId: result.account.id, account: result.account, bootError: null, ready: true });
+    void syncCloudSave(result.account.id, previousId);
     return { ok: true };
   },
   logout: async () => {
