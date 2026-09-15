@@ -60,3 +60,20 @@ export function enhanceLevelAfterFail(currentLevel: number) {
   if (enhanceFailKind(currentLevel) === "stay") return currentLevel;
   return Math.max(enhanceSafeFloor(currentLevel), currentLevel - 1);
 }
+
+/** Planned cost if every attempt from `fromLevel` to `toLevel` succeeds. */
+export function enhancePlanCost(fromLevel: number, toLevel: number, itemLevel = 1) {
+  const target = Math.min(Math.max(toLevel, fromLevel), MAX_ENHANCE);
+  let gold = 0;
+  let ore = 0;
+  let shards = 0;
+  let attempts = 0;
+  for (let lv = fromLevel; lv < target; lv++) {
+    const c = enhanceCost(lv, itemLevel);
+    gold += c.gold;
+    ore += c.ore;
+    shards += c.shards;
+    attempts += 1;
+  }
+  return { gold, ore, shards, attempts };
+}

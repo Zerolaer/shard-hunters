@@ -11,6 +11,10 @@ interface UiState {
   filterRarity: Rarity | "all";
   inventorySortMode: InventorySortMode;
   enhanceMessage: string | null;
+  /** Dedicated заточка ceremony modal. */
+  enhanceModalOpen: boolean;
+  /** Pre-selected item ids when the enhance modal opens. */
+  enhanceModalSeedIds: string[];
   inventoryMessage: string | null;
   showCombatLog: boolean;
   setTab: (tab: RightTab) => void;
@@ -25,6 +29,8 @@ interface UiState {
   setFilterRarity: (rarity: Rarity | "all") => void;
   setInventorySortMode: (mode: InventorySortMode) => void;
   setEnhanceMessage: (msg: string | null) => void;
+  openEnhanceModal: (seedIds?: string[]) => void;
+  closeEnhanceModal: () => void;
   setInventoryMessage: (msg: string | null) => void;
   setShowCombatLog: (on: boolean) => void;
   toggleCombatLog: () => void;
@@ -59,6 +65,8 @@ export const useUiStore = create<UiState>((set) => ({
   filterRarity: "all",
   inventorySortMode: "rarity",
   enhanceMessage: null,
+  enhanceModalOpen: false,
+  enhanceModalSeedIds: [],
   inventoryMessage: null,
   showCombatLog: false,
   setTab: (tab) => set({ tab }),
@@ -82,6 +90,14 @@ export const useUiStore = create<UiState>((set) => ({
   setFilterRarity: (filterRarity) => set({ filterRarity }),
   setInventorySortMode: (inventorySortMode) => set({ inventorySortMode }),
   setEnhanceMessage: (enhanceMessage) => set({ enhanceMessage }),
+  openEnhanceModal: (seedIds) =>
+    set({
+      enhanceModalOpen: true,
+      enhanceModalSeedIds: seedIds?.length ? [...seedIds] : [],
+      enhanceMessage: null,
+    }),
+  closeEnhanceModal: () =>
+    set({ enhanceModalOpen: false, enhanceModalSeedIds: [], enhanceMessage: null }),
   setInventoryMessage: (inventoryMessage) => set({ inventoryMessage }),
   setShowCombatLog: (showCombatLog) => {
     writeShowCombatLog(showCombatLog);

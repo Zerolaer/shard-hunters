@@ -55,14 +55,13 @@ export function ItemActionPanel({
   const inventory = useGameStore((s) => s.inventory);
   const equipment = useGameStore((s) => s.equipment);
   const resources = useGameStore((s) => s.resources);
-  const enhanceItem = useGameStore((s) => s.enhanceItem);
   const salvageItem = useGameStore((s) => s.salvageItem);
   const sellItem = useGameStore((s) => s.sellItem);
   const equipItem = useGameStore((s) => s.equipItem);
   const unequipSlot = useGameStore((s) => s.unequipSlot);
   const classId = useGameStore((s) => s.character.classId);
   const message = useUiStore((s) => s.enhanceMessage);
-  const setEnhanceMessage = useUiStore((s) => s.setEnhanceMessage);
+  const openEnhanceModal = useUiStore((s) => s.openEnhanceModal);
   const dismissItemPanel = useUiStore((s) => s.dismissItemPanel);
   const selectionMode = useUiStore((s) => s.selectionMode);
   const setTab = useUiStore((s) => s.setTab);
@@ -218,10 +217,7 @@ export function ItemActionPanel({
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  const res = enhanceItem(item.id);
-                  setEnhanceMessage(res.message);
-                }}
+                onClick={() => openEnhanceModal([item.id])}
                 disabled={item.enhanceLevel >= MAX_ENHANCE}
                 className="es-btn es-btn-cyan es-inv-control px-2.5"
               >

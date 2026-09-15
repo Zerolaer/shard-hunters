@@ -8,6 +8,7 @@ import { CharacterPanel } from "@/components/character/CharacterPanel";
 import { BuildPanel } from "@/components/character/BuildPanel";
 import { InventoryPanel } from "@/components/character/InventoryPanel";
 import { PinnedItemPanel } from "@/components/character/PinnedItemPanel";
+import { EnhanceModal } from "@/components/character/EnhanceModal";
 import { WorkshopPanel } from "@/components/character/WorkshopPanel";
 import { WorldPanel } from "@/components/territories/WorldPanel";
 import { GuildPanel } from "@/components/territories/GuildPanel";
@@ -125,6 +126,7 @@ export function RightTabs() {
         )}
       </div>
       <PinnedItemPanel />
+      <EnhanceModal />
     </section>
   );
 }
