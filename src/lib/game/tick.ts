@@ -1,0 +1,917 @@
+import { bmDefenseMult, bmOffenseMult, expectedBm, gcdLength, REGEN } from "./balance";
+import { syncCombatEffects } from "./combatEffects";
+import { healPlayer, pushFloater, pushLog, registerMiss } from "./combatFx";
+import {
+  BOSS_BONUS_ITEM_CHANCE,
+  KILLS_FOR_BOSS,
+  LOCATION_BY_ID,
+  LOCATIONS,
+  MAX_FLOOR,
+  MINES,
+  OFFLINE_CAP_SECONDS,
+  resolvedAutoSell,
+  SKILL_BY_ID,
+  STAT_POINTS_PER_LEVEL,
+  TALENT_POINTS_PER_LEVEL,
+} from "./constants";
+import { createGem, GEM_NAME, GEM_RANK_LABEL } from "./gems";
+import { irand } from "./rng";
+import {
+  BLESSING_MATERIAL_LABEL,
+  endgameDropsFor,
+  GEM_BAG_SIZE,
+  gemDropChanceFor,
+  WORKSHOP_BOSS_MULT,
+  WORKSHOP_BOSS_ROLL_MULT,
+} from "./workshop";
+import {
+  goldFromSell,
+  itemPower,
+  rollAccuracyHit,
+  rollHit,
+  skillDamage,
+  statsOf,
+  xpLevelGapMult,
+  xpToNext,
+} from "./formulas";
+import {
+  emptyLocationProgress,
+  finalDropChance,
+  generateItem,
+  generateMonster,
+  rarityBonusFor,
+  rollRarity,
+  type LootKind,
+} from "./generators";
+import { migrateAssassinBuild } from "./classKit";
+import {
+  DUNGEON_HALL_BY_ID,
+  dungeonOreOnKill,
+  dungeonRemainingMs,
+  emptyDungeonState,
+  isDungeonLocationId,
+  recommendedSafeLocationAfterDungeon,
+} from "./dungeons";
+import { ensureFarmState, FARM_SPOT_BY_ID, occupySpot, vacatePlayerSpots } from "./spots";
+import {
+  afterSinSwing,
+  emptySinBuild,
+  emptySinCombat,
+  ensureSin,
+  isPlayingSin,
+  onSinNewMonster,
+  pickSinCast,
+  sinIncomingMultiplier,
+  sinMonsterIntervalMult,
+  sinOnPlayerHit,
+  tickSinEffects,
+  tryCastSin,
+} from "./sin";
+import { isSkillUnlocked } from "./talents";
+import {
+  RARITIES,
+  type CombatLogEntry,
+  type GameData,
+  type Gem,
+  type Item,
+  type Rarity,
+  type SkillId,
+} from "./types";
+
+type Draft = GameData;
+
+/** Bounds catch-up work when a throttled or restored tab hands the loop a long dt. */
+const MAX_SWINGS_PER_TICK = 8;
+
+function firstEmptyInv(state: Draft) {
+  return state.inventory.findIndex((x) => x === null);
+}
+
+export function isAutoSellEnabled(state: Draft, rarity: Rarity) {
+  if (state.settings?.autoSellEnabled === false) return false;
+  return !!resolvedAutoSell(state.settings?.autoSell)[rarity];
+}
+
+export function syncAutoSellSettings(state: Draft) {
+  if (!state.settings) {
+    state.settings = { autoBattle: false, autoSellEnabled: true, autoSell: resolvedAutoSell() };
+    return;
+  }
+  if (state.settings.autoSellEnabled == null) state.settings.autoSellEnabled = true;
+  state.settings.autoSell = resolvedAutoSell(state.settings.autoSell);
+}
+
+/** Blessed or socketed gear is never disposed of automatically — it is hand-made. */
+export function isWorkshopItem(item: Item) {
+  return !!item.blessed || !!item.sockets?.length;
+}
+
+/** Sell inventory items of one rarity. Equipped gear is untouched; empty slots stay empty. */
+export function flushAutoSellInventory(state: Draft, rarity: Rarity) {
+  const sold: { name: string; gold: number }[] = [];
+  for (let i = 0; i < state.inventory.length; i++) {
+    const item = state.inventory[i];
+    if (!item || item.rarity !== rarity || isWorkshopItem(item)) continue;
+    sold.push({ name: item.name, gold: goldFromSell(item) });
+    state.inventory[i] = null;
+  }
+  if (sold.length === 0) return { sold: 0, gold: 0 };
+  const gold = sold.reduce((sum, row) => sum + row.gold, 0);
+  state.resources.gold += gold;
+  if (sold.length <= 3) {
+    for (const row of sold) {
+      pushLog(state, "gold", `Автопродажа из сумки: ${row.name} → ${row.gold} золота`);
+    }
+  } else {
+    pushLog(state, "gold", `Автопродажа из сумки: ${sold.length} предметов → ${gold} золота`);
+  }
+  return { sold: sold.length, gold };
+}
+
+export function receiveLootItem(state: Draft, item: Item, source: "normal" | "boss" = "normal") {
+  const tag = source === "boss" ? "Трофей босса" : "Добыча";
+  if (isAutoSellEnabled(state, item.rarity)) {
+    const gold = goldFromSell(item);
+    state.resources.gold += gold;
+    pushLog(state, "loot", `${tag} (автопродажа): ${item.name} → ${gold} золота`);
+    return;
+  }
+  const slot = firstEmptyInv(state);
+  if (slot === -1) {
+    // A full bag used to sell whatever just dropped, so a mythic could vanish
+    // into pocket change. Keep the better piece and sell the weakest instead.
+    const worst = worstInventorySlot(state);
+    if (worst && compareItemValue(item, worst.item) > 0) {
+      const gold = goldFromSell(worst.item);
+      state.resources.gold += gold;
+      state.inventory[worst.index] = item;
+      pushLog(
+        state,
+        "loot",
+        `Сумка полна: ${worst.item.name} продан за ${gold} золота, ${item.name} [${item.rarity}] оставлен`,
+      );
+      return;
+    }
+    const gold = goldFromSell(item);
+    state.resources.gold += gold;
+    pushLog(state, "loot", `Сумка полна. ${item.name} продан за ${gold} золота`);
+    return;
+  }
+  state.inventory[slot] = item;
+  pushLog(state, "loot", `${tag}: ${item.name} [${item.rarity}]`);
+}
+
+/** Rarity first, then raw power — a mythic outranks a high-roll common. */
+function compareItemValue(a: Item, b: Item) {
+  const ra = RARITIES.indexOf(a.rarity);
+  const rb = RARITIES.indexOf(b.rarity);
+  if (ra !== rb) return ra - rb;
+  return itemPower(a) - itemPower(b);
+}
+
+function worstInventorySlot(state: Draft) {
+  let worst: { index: number; item: Item } | null = null;
+  for (let i = 0; i < state.inventory.length; i++) {
+    const item = state.inventory[i];
+    if (!item || isWorkshopItem(item)) continue;
+    if (!worst || compareItemValue(item, worst.item) < 0) worst = { index: i, item };
+  }
+  return worst;
+}
+
+/** Pull socketed gems back into the bag before an item leaves the save. */
+export function reclaimGems(state: Draft, item: Item) {
+  if (!item.sockets?.length) return 0;
+  if (!state.gems) state.gems = [];
+  let kept = 0;
+  for (let i = 0; i < item.sockets.length; i++) {
+    const gem = item.sockets[i];
+    if (!gem) continue;
+    if (state.gems.length >= GEM_BAG_SIZE) break;
+    state.gems.push(gem);
+    item.sockets[i] = null;
+    kept += 1;
+  }
+  if (kept > 0) pushLog(state, "system", `Камни возвращены в мешок: ${kept}`);
+  return kept;
+}
+
+function currentSpot(state: Draft) {
+  return FARM_SPOT_BY_ID[state.combat.spotId];
+}
+
+function pveBmMults(state: Draft, derived: ReturnType<typeof statsOf>) {
+  const monster = state.combat.monster;
+  if (!monster || monster.isPvp || state.combat.mode === "pvp") {
+    return { dealt: 1, taken: 1 };
+  }
+  const required = currentSpot(state)?.requiredBm ?? expectedBm(state.character.level);
+  return {
+    dealt: bmOffenseMult(derived.powerScore, required),
+    taken: bmDefenseMult(derived.powerScore, required),
+  };
+}
+
+function unlockLocationsByLevel(state: Draft, announce: boolean) {
+  for (const loc of LOCATIONS) {
+    if (state.character.level < loc.minLevel) continue;
+    if (state.progression.unlockedLocationIds.includes(loc.id)) continue;
+    state.progression.unlockedLocationIds.push(loc.id);
+    if (announce) pushLog(state, "system", `Открыта локация: ${loc.name}`);
+  }
+}
+
+export function ensureWorld(state: Draft) {
+  // Ensure dungeon locations/spots are registered (module side-effect + re-import safety).
+  void DUNGEON_HALL_BY_ID;
+  if (!state.dungeon) state.dungeon = emptyDungeonState();
+  if (!state.dungeon.dailyUsed) state.dungeon.dailyUsed = {};
+  state.farm = ensureFarmState(state.farm);
+  if (!state.gems) state.gems = [];
+  if (state.resources.blessing == null) state.resources.blessing = 0;
+  if (!state.progression.locations) state.progression.locations = {};
+  for (const loc of LOCATIONS) {
+    if (!state.progression.locations[loc.id]) {
+      state.progression.locations[loc.id] = emptyLocationProgress();
+    }
+  }
+  for (const id of Object.keys(DUNGEON_HALL_BY_ID)) {
+    if (!state.progression.locations[id]) {
+      state.progression.locations[id] = emptyLocationProgress();
+    }
+  }
+  if (!state.progression.unlockedLocationIds?.length) {
+    state.progression.unlockedLocationIds = ["woods"];
+  }
+  unlockLocationsByLevel(state, false);
+  tickDungeonSession(state);
+}
+
+function tryPlaceLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: LootKind) {
+  const spot = currentSpot(state);
+  const locDef = LOCATION_BY_ID[state.combat.locationId];
+  const rarity = rollRarity(
+    dropBonus + rarityBonusFor(kind) + (spot?.rarityBias ?? 0) + (locDef?.rarityBias ?? 0),
+  );
+  const item = generateItem({
+    itemLevel: Math.max(1, monsterLevel + (kind === "boss" ? 2 : 0) + (spot?.tier === "apex" ? 2 : 0)),
+    rarity,
+    preferredClass: state.character.classId,
+  });
+  receiveLootItem(state, item, kind === "boss" ? "boss" : "normal");
+}
+
+export function receiveGem(state: Draft, gem: Gem, fromBoss = false) {
+  if (!state.gems) state.gems = [];
+  if (state.gems.length >= GEM_BAG_SIZE) {
+    pushLog(state, "loot", `Мешок камней полон — ${GEM_NAME[gem.rank]} рассыпался.`);
+    return false;
+  }
+  state.gems.push(gem);
+  pushLog(
+    state,
+    "loot",
+    fromBoss
+      ? `Трофей босса · камень: ${GEM_NAME[gem.rank]} [${GEM_RANK_LABEL[gem.rank]}]`
+      : `Камень: ${GEM_NAME[gem.rank]} [${GEM_RANK_LABEL[gem.rank]}]`,
+  );
+  return true;
+}
+
+/**
+ * Blessing sparks and gems ride alongside normal loot rather than replacing a
+ * roll, so adding the workshop does not quietly cut item drops in the zones
+ * that feed it.
+ */
+function grantWorkshopLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: LootKind) {
+  if (kind === "pvp") return;
+  const locId = state.combat.locationId;
+  const isBoss = kind === "boss";
+  const bundle = isBoss ? WORKSHOP_BOSS_MULT : 1;
+  const rollMult = isBoss ? WORKSHOP_BOSS_ROLL_MULT : 1;
+
+  const endgame = endgameDropsFor(locId);
+  if (endgame && Math.random() < endgame.sparkChance * rollMult) {
+    const sparks = irand(endgame.sparkMin, endgame.sparkMax) * bundle;
+    state.resources.blessing = (state.resources.blessing ?? 0) + sparks;
+    pushLog(
+      state,
+      "loot",
+      isBoss
+        ? `Трофей босса · ${BLESSING_MATERIAL_LABEL}: +${sparks}`
+        : `${BLESSING_MATERIAL_LABEL}: +${sparks}`,
+    );
+  }
+
+  const gemRoll = gemDropChanceFor(locId, monsterLevel);
+  if (gemRoll.chance > 0 && Math.random() < gemRoll.chance * rollMult) {
+    const rank = rollRarity(gemRoll.bias + Math.max(0, dropBonus));
+    receiveGem(state, createGem(rank), isBoss);
+  }
+}
+
+function grantLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: LootKind) {
+  const spot = currentSpot(state);
+  const chance = finalDropChance(kind, dropBonus, spot?.dropChanceMult ?? 1);
+  const pityAt = spot?.pityKills ?? 5;
+  const lootless = state.combat.lootlessKills ?? 0;
+  const pity = kind === "trash" && lootless >= pityAt;
+  if (kind === "boss") {
+    pushLog(state, "boss", "Награда за босса:");
+  }
+  if (pity || Math.random() < chance) {
+    tryPlaceLoot(state, dropBonus, monsterLevel, kind);
+    if (kind === "trash") state.combat.lootlessKills = 0;
+  } else if (kind === "trash") {
+    state.combat.lootlessKills = lootless + 1;
+  }
+  if (kind === "boss" && Math.random() < BOSS_BONUS_ITEM_CHANCE) {
+    tryPlaceLoot(state, dropBonus, monsterLevel, kind);
+  }
+  grantWorkshopLoot(state, dropBonus, monsterLevel, kind);
+}
+
+function gainXp(state: Draft, amount: number) {
+  state.character.xp += amount;
+  let leveled = 0;
+  while (state.character.xp >= xpToNext(state.character.level)) {
+    state.character.xp -= xpToNext(state.character.level);
+    state.character.level += 1;
+    state.character.unspentPoints += STAT_POINTS_PER_LEVEL;
+    state.talents.points += TALENT_POINTS_PER_LEVEL;
+    leveled += 1;
+  }
+  if (leveled) {
+    const derived = statsOf(state);
+    state.character.hp = derived.maxHp;
+    pushLog(
+      state,
+      "xp",
+      `Уровень ${state.character.level}! +${leveled * STAT_POINTS_PER_LEVEL} хар-к, +${leveled} очко билда`,
+    );
+    unlockLocationsByLevel(state, true);
+  }
+}
+
+function spawnNext(state: Draft, isBoss: boolean) {
+  const locId = state.combat.locationId;
+  const prog = state.progression.locations[locId] ?? emptyLocationProgress();
+  const danger = currentSpot(state)?.danger ?? 1;
+  state.combat.mode = "pve";
+  state.combat.monster = generateMonster({
+    locationId: locId,
+    floor: prog.floor,
+    isBoss,
+    danger: isBoss ? 1 : danger,
+  });
+  state.combat.monsterAtkAcc = 0;
+  state.combat.playerAtkAcc = 0;
+  onSinNewMonster(state);
+}
+
+function claimCurrentSpot(state: Draft) {
+  const derived = statsOf(state);
+  occupySpot(state.farm, state.combat.spotId, {
+    id: "player",
+    name: state.character.name,
+    guild: state.guild.name,
+    power: derived.powerScore,
+    isPlayer: true,
+  });
+}
+
+function onPvpWin(state: Draft) {
+  const monster = state.combat.monster;
+  if (!monster) return;
+  const derived = statsOf(state);
+  const xp = Math.round(monster.xp * (1 + derived.xpBonus) * xpLevelGapMult(state.character.level, monster.level));
+  state.resources.gold += monster.gold;
+  state.resources.shards += monster.shards;
+  gainXp(state, xp);
+  pushLog(
+    state,
+    "pvp",
+    `${monster.name} повержен. Спот ваш. +${xp} XP, +${monster.gold} золота`,
+  );
+  grantLoot(state, derived.dropBonus, monster.level, "pvp");
+  claimCurrentSpot(state);
+  state.combat.mode = "pve";
+  spawnNext(state, false);
+}
+
+function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
+  const monster = state.combat.monster;
+  if (!monster) return;
+  if (monster.isPvp || state.combat.mode === "pvp") {
+    onPvpWin(state);
+    return;
+  }
+  const spot = currentSpot(state);
+  const hall = DUNGEON_HALL_BY_ID[state.combat.locationId];
+  const xp = Math.round(
+    monster.xp *
+      (1 + derivedXpBonus) *
+      (spot?.xpMult ?? 1) *
+      xpLevelGapMult(state.character.level, monster.level),
+  );
+  const goldMult = spot?.goldMult ?? 1;
+  const gold = Math.round(monster.gold * goldMult);
+  const shards = Math.round(monster.shards * goldMult);
+  state.resources.gold += gold;
+  state.resources.shards += shards;
+  gainXp(state, xp);
+
+  let oreNote = "";
+  if (hall) {
+    const ore = dungeonOreOnKill(hall);
+    if (ore > 0) {
+      state.resources.ore += ore;
+      oreNote = `, +${ore} руды`;
+    }
+  }
+
+  pushLog(
+    state,
+    monster.isBoss ? "boss" : "xp",
+    monster.isBoss
+      ? `${monster.name} повержен! +${xp} XP, +${gold} золота, +${shards} осколков${oreNote}`
+      : `${monster.name} повержен. +${xp} XP, +${gold} золота, +${shards} осколков${oreNote}`,
+  );
+  grantLoot(state, dropBonus, monster.level, monster.isBoss ? "boss" : "trash");
+
+  const locId = state.combat.locationId;
+  if (!state.progression.locations[locId]) {
+    state.progression.locations[locId] = emptyLocationProgress();
+  }
+  const prog = state.progression.locations[locId];
+
+  // Dungeons: endless trash farm, no floor/boss progression.
+  if (isDungeonLocationId(locId)) {
+    spawnNext(state, false);
+    return;
+  }
+
+  if (monster.isBoss) {
+    prog.bossReady = false;
+    prog.killsOnFloor = 0;
+    if (prog.floor >= MAX_FLOOR) {
+      prog.cleared = true;
+      pushLog(state, "boss", `${monster.name} пал. Локация зачищена!`);
+      const idx = LOCATIONS.findIndex((l) => l.id === locId);
+      const next = LOCATIONS[idx + 1];
+      if (next && state.character.level >= next.minLevel) {
+        if (!state.progression.unlockedLocationIds.includes(next.id)) {
+          state.progression.unlockedLocationIds.push(next.id);
+          pushLog(state, "system", `Путь открыт: ${next.name}`);
+        }
+      }
+    } else {
+      prog.floor += 1;
+      pushLog(state, "boss", `Этап ${prog.floor - 1} пройден. Новый этаж: ${prog.floor}`);
+    }
+    spawnNext(state, false);
+    return;
+  }
+
+  prog.killsOnFloor += 1;
+  if (prog.killsOnFloor > 0 && prog.killsOnFloor % KILLS_FOR_BOSS === 0) {
+    prog.bossReady = true;
+    pushLog(state, "boss", `Босс этажа готов. Бросьте вызов, когда будете готовы.`);
+  }
+  spawnNext(state, false);
+}
+
+/** End active dungeon when the wall-clock hour expires. */
+export function tickDungeonSession(state: Draft, now = Date.now()) {
+  if (!state.dungeon?.active) return;
+  if (dungeonRemainingMs(state.dungeon.active, now) > 0) return;
+  endDungeonSession(state, "Время подземелья истекло. Вы возвращены в открытый мир.");
+}
+
+export function endDungeonSession(state: Draft, reason: string) {
+  if (!state.dungeon) state.dungeon = emptyDungeonState();
+  const was = state.dungeon.active;
+  state.dungeon.active = null;
+  if (!was && !isDungeonLocationId(state.combat.locationId)) return;
+
+  const derived = statsOf(state);
+  const locId = recommendedSafeLocationAfterDungeon(state.character.level, derived.powerScore);
+  const spots = Object.values(FARM_SPOT_BY_ID).filter(
+    (s) => s.locationId === locId && s.tier === "commons",
+  );
+  const spot = spots[0] ?? FARM_SPOT_BY_ID["woods-2-0"];
+  state.combat.locationId = locId;
+  state.combat.spotId = spot?.id ?? "woods-2-0";
+  state.combat.mode = "pve";
+  state.combat.lootlessKills = 0;
+  if (!state.progression.locations[locId]) {
+    state.progression.locations[locId] = emptyLocationProgress();
+  }
+  vacatePlayerSpots(state.farm);
+  if (spot && !isDungeonLocationId(spot.locationId)) {
+    occupySpot(state.farm, spot.id, {
+      id: "player",
+      name: state.character.name,
+      guild: state.guild.name,
+      power: derived.powerScore,
+      isPlayer: true,
+    });
+  }
+  const floor = state.progression.locations[locId]?.floor ?? 1;
+  const danger = FARM_SPOT_BY_ID[state.combat.spotId]?.danger ?? 1;
+  state.combat.monster = generateMonster({ locationId: locId, floor, isBoss: false, danger });
+  state.combat.playerAtkAcc = 0;
+  state.combat.monsterAtkAcc = 0;
+  state.settings.autoBattle = false;
+  pushLog(state, "system", reason);
+}
+
+function onPlayerDeath(state: Draft) {
+  const loss = Math.round(state.resources.gold * 0.06);
+  state.resources.gold = Math.max(0, state.resources.gold - loss);
+  state.settings.autoBattle = false;
+  const derived = statsOf(state);
+  state.character.hp = derived.maxHp;
+  state.combat.playerAtkAcc = 0;
+  state.combat.monsterAtkAcc = 0;
+  state.combat.wardHits = 0;
+  state.combat.bloodlustHits = 0;
+  state.combat.gcd = 0;
+  if (state.combat.sin) {
+    state.combat.sin.veilHits = 0;
+    state.combat.sin.stealth = 0;
+    state.combat.sin.gcd = 0;
+  }
+
+  if (state.combat.mode === "pvp" || state.combat.monster?.isPvp) {
+    const rival = state.combat.monster?.name ?? "охотник";
+    pushLog(state, "death", `${rival} вас убил. Спот остаётся за ним. −${loss} золота.`);
+    state.combat.mode = "pve";
+    spawnNext(state, false);
+    return;
+  }
+
+  if (state.combat.monster?.isBoss) {
+    pushLog(state, "death", `Поражение. Босс устоит. Потеряно ${loss} золота. Авто-бой выключен.`);
+  } else {
+    pushLog(state, "death", `Вы пали. Потеряно ${loss} золота. Авто-бой выключен.`);
+  }
+  spawnNext(state, false);
+}
+
+function currentDanger(state: Draft, monster: { isBoss: boolean; isPvp: boolean }) {
+  if (monster.isPvp || monster.isBoss) return 1;
+  return currentSpot(state)?.danger ?? 1;
+}
+
+function playerSwing(state: Draft, multiplier: number) {
+  const monster = state.combat.monster;
+  if (!monster) return;
+  const derived = statsOf(state);
+  const danger = currentDanger(state, monster);
+  const accRoll = rollAccuracyHit(derived.accuracy, state.character.level, monster, danger);
+  if (!accRoll.hit) {
+    registerMiss(state, `Промах (${accRoll.chance.toFixed(0)}%)`);
+    return;
+  }
+  let attack = derived.attack * multiplier * pveBmMults(state, derived).dealt;
+  if (state.combat.bloodlustHits > 0) {
+    attack *= 1.45;
+    state.combat.bloodlustHits -= 1;
+  }
+  const hit = rollHit(attack, monster.defense, derived.critChance, derived.critDamage, state.character.level);
+  monster.hp = Math.max(0, monster.hp - hit.value);
+  state.combat.hitFlash = 0.22;
+  pushFloater(state, {
+    value: hit.value,
+    isCrit: hit.isCrit,
+    isHeal: false,
+    isPlayerTarget: false,
+  });
+  if (derived.lifesteal > 0) {
+    healPlayer(state, Math.round(hit.value * derived.lifesteal), derived.maxHp);
+  }
+  afterSinSwing(state, hit.isCrit);
+  pushLog(
+    state,
+    hit.isCrit ? "crit" : "hit",
+    hit.isCrit
+      ? `Крит! ${hit.value} урона по ${monster.name}`
+      : `Вы наносите ${hit.value} урона (${monster.name})`,
+  );
+  if (monster.hp <= 0) {
+    onKill(state, derived.xpBonus, derived.dropBonus);
+  }
+}
+
+function applySkillCooldown(state: Draft, skillId: string, baseCd: number) {
+  const derived = statsOf(state);
+  state.combat.skillCd[skillId] = baseCd / (1 + derived.skillHaste);
+}
+
+function startGcd(state: Draft, kind: "offensive" | "utility", skillHaste: number) {
+  state.combat.gcd = gcdLength(kind, skillHaste);
+}
+
+function tryCast(state: Draft, skillId: SkillId) {
+  const def = SKILL_BY_ID[skillId];
+  if (!def) return;
+  if ((state.combat.skillCd[skillId] ?? 0) > 0) return;
+  if ((state.combat.gcd ?? 0) > 0) return;
+  if (!isSkillUnlocked(state.talents.ranks, skillId)) return;
+  const derived = statsOf(state);
+  const monster = state.combat.monster;
+  const utility = def.kind === "heal" || def.kind === "buff";
+
+  if (def.kind === "heal") {
+    if (state.character.hp >= derived.maxHp * 0.92) return;
+    const amount = skillDamage(skillId, state.character, derived, state.equipment);
+    const healed = healPlayer(state, amount, derived.maxHp);
+    applySkillCooldown(state, skillId, def.cooldown);
+    startGcd(state, "utility", derived.skillHaste);
+    if (healed > 0) pushLog(state, "heal", `${def.name}: +${healed} HP`);
+    return;
+  }
+
+  if (skillId === "essence-ward") {
+    state.combat.wardHits = 3;
+    applySkillCooldown(state, skillId, def.cooldown);
+    startGcd(state, "utility", derived.skillHaste);
+    pushLog(state, "skill", `${def.name}: щит на 3 удара`);
+    return;
+  }
+
+  if (def.kind === "buff") {
+    state.combat.bloodlustHits = 4;
+    applySkillCooldown(state, skillId, def.cooldown);
+    startGcd(state, "utility", derived.skillHaste);
+    pushLog(state, "skill", `${def.name}: жажда крови на 4 удара`);
+    return;
+  }
+
+  if (!monster) return;
+  const danger = currentDanger(state, monster);
+  const accRoll = rollAccuracyHit(derived.accuracy, state.character.level, monster, danger);
+  if (!accRoll.hit) {
+    applySkillCooldown(state, skillId, def.cooldown);
+    startGcd(state, utility ? "utility" : "offensive", derived.skillHaste);
+    registerMiss(state, `${def.name}: промах (${accRoll.chance.toFixed(0)}%)`);
+    return;
+  }
+  const ratio = monster.maxHp > 0 ? monster.hp / monster.maxHp : 1;
+  const critBonus = skillId === "backstab" ? derived.critChance + 18 : derived.critChance * 0.85;
+  const dmg = skillDamage(skillId, state.character, derived, state.equipment, ratio) * pveBmMults(state, derived).dealt;
+  const hit = rollHit(dmg, monster.defense, critBonus, derived.critDamage, state.character.level);
+  monster.hp = Math.max(0, monster.hp - hit.value);
+  state.combat.hitFlash = 0.28;
+  applySkillCooldown(state, skillId, def.cooldown);
+  startGcd(state, "offensive", derived.skillHaste);
+  pushFloater(state, {
+    value: hit.value,
+    isCrit: hit.isCrit,
+    isHeal: false,
+    isPlayerTarget: false,
+  });
+  pushLog(
+    state,
+    hit.isCrit ? "crit" : "skill",
+    `${def.name}: ${hit.value} урона${hit.isCrit ? " (крит)" : ""}`,
+  );
+
+  if (skillId === "venom" && monster.hp > 0) {
+    const tick = Math.max(1, Math.round(hit.value * 0.35));
+    monster.hp = Math.max(0, monster.hp - tick);
+    pushFloater(state, { value: tick, isCrit: false, isHeal: false, isPlayerTarget: false });
+    pushLog(state, "skill", `Яд: ещё ${tick}`);
+  }
+
+  if (derived.lifesteal > 0) {
+    healPlayer(state, Math.round(hit.value * derived.lifesteal * 0.6), derived.maxHp);
+  }
+  if (monster.hp <= 0) {
+    onKill(state, derived.xpBonus, derived.dropBonus);
+  }
+}
+
+export function playerOrePerSec(state: Draft) {
+  let ore = 0;
+  for (const mine of MINES) {
+    const occ = state.mines[mine.id]?.occupants ?? [];
+    if (occ.some((o) => o.isPlayer)) ore += mine.orePerSec;
+  }
+  return ore;
+}
+
+export function applyOffline(state: Draft, now = Date.now()) {
+  const last = state.meta.lastTick || now;
+  const elapsed = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (now - last) / 1000));
+  state.meta.lastTick = now;
+  if (!state.talents) {
+    state.talents = {
+      points: Math.max(0, state.character.level - 1),
+      ranks: state.character.classId === "assassin" ? {} : { "fury-strike": 1 },
+    };
+  }
+  ensureWorld(state);
+  if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
+  if (!state.combat.mode) state.combat.mode = "pve";
+  if (state.combat.wardHits == null) state.combat.wardHits = 0;
+  if (state.combat.gcd == null) state.combat.gcd = 0;
+  if (state.combat.lootlessKills == null) state.combat.lootlessKills = 0;
+  if (!state.combat.playerEffects) state.combat.playerEffects = [];
+  if (!state.combat.monsterEffects) state.combat.monsterEffects = [];
+  if (!state.combat.sin) state.combat.sin = emptySinCombat();
+  if (!state.sinBuild) state.sinBuild = emptySinBuild();
+  ensureSin(state);
+  if (isPlayingSin(state)) migrateAssassinBuild(state);
+  syncAutoSellSettings(state);
+  for (const rarity of RARITIES) {
+    if (isAutoSellEnabled(state, rarity)) flushAutoSellInventory(state, rarity);
+  }
+  syncCombatEffects(state);
+  if (elapsed < 8) {
+    state.meta.pendingOffline = null;
+    return;
+  }
+  const rate = playerOrePerSec(state);
+  const ore = Math.floor(rate * elapsed);
+  state.resources.ore += ore;
+  state.meta.pendingOffline = { seconds: Math.round(elapsed), ore };
+  if (ore > 0) {
+    pushLog(
+      state,
+      "system",
+      `AFK-доход шахт за ${Math.round(elapsed)}с: +${ore} руды осколков`,
+    );
+  }
+}
+
+export function tickGame(state: Draft, dt: number) {
+  const now = Date.now();
+  state.meta.lastTick = now;
+  if (!state.talents) {
+    state.talents = {
+      points: Math.max(0, state.character.level - 1),
+      ranks: state.character.classId === "assassin" ? {} : { "fury-strike": 1 },
+    };
+  }
+  ensureWorld(state);
+  if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
+  if (state.combat.lootlessKills == null) state.combat.lootlessKills = 0;
+  if (!state.combat.playerEffects) state.combat.playerEffects = [];
+  if (!state.combat.monsterEffects) state.combat.monsterEffects = [];
+  if (!state.combat.sin) state.combat.sin = emptySinCombat();
+  if (!state.sinBuild) state.sinBuild = emptySinBuild();
+  ensureSin(state);
+  if (isPlayingSin(state)) migrateAssassinBuild(state);
+  syncAutoSellSettings(state);
+
+  if (!state.combat.monster) {
+    spawnNext(state, false);
+  }
+
+  state.combat.hitFlash = Math.max(0, state.combat.hitFlash - dt);
+  state.combat.playerHitFlash = Math.max(0, state.combat.playerHitFlash - dt);
+  state.combat.floatingTexts = state.combat.floatingTexts.filter((f) => now - f.spawnedAt < 1100);
+
+  const derived = statsOf(state);
+  if (state.character.hp <= 0 || state.character.hp > derived.maxHp) {
+    state.character.hp = Math.min(Math.max(state.character.hp, 0), derived.maxHp);
+  }
+  const playerSpot = state.farm[state.combat.spotId]?.occupant;
+  if (playerSpot?.isPlayer) {
+    playerSpot.power = derived.powerScore;
+    playerSpot.name = state.character.name;
+  }
+  if (state.character.hp > 0) {
+    const regenRate = state.settings.autoBattle ? REGEN.inCombat : REGEN.idle;
+    const regen = derived.maxHp * regenRate * dt;
+    state.character.hp = Math.min(derived.maxHp, state.character.hp + regen);
+  }
+
+  const oreRate = playerOrePerSec(state);
+  if (oreRate > 0) {
+    state.oreAcc += dt * oreRate;
+    if (state.oreAcc >= 1) {
+      const add = Math.floor(state.oreAcc);
+      state.resources.ore += add;
+      state.oreAcc -= add;
+    }
+  }
+
+  for (const id of Object.keys(state.combat.skillCd)) {
+    state.combat.skillCd[id] = Math.max(0, (state.combat.skillCd[id] ?? 0) - dt);
+  }
+  state.combat.gcd = Math.max(0, (state.combat.gcd ?? 0) - dt);
+
+  if (!state.settings.autoBattle || !state.combat.monster) {
+    syncCombatEffects(state);
+    return;
+  }
+
+  if (isPlayingSin(state)) {
+    const sinKill = tickSinEffects(state, dt);
+    if (sinKill) {
+      const d = statsOf(state);
+      onKill(state, d.xpBonus, d.dropBonus);
+      if (!state.settings.autoBattle) {
+        syncCombatEffects(state);
+        return;
+      }
+    }
+    const next = pickSinCast(state);
+    if (next) {
+      const died = tryCastSin(state, next);
+      if (died) {
+        const d = statsOf(state);
+        onKill(state, d.xpBonus, d.dropBonus);
+      }
+      if (!state.settings.autoBattle) {
+        syncCombatEffects(state);
+        return;
+      }
+    }
+  } else {
+    for (const slot of state.combat.hotbar) {
+      if (state.combat.gcd > 0) break;
+      if (!slot) continue;
+      if ((state.combat.skillCd[slot] ?? 0) > 0) continue;
+      tryCast(state, slot);
+      if (!state.settings.autoBattle) {
+        syncCombatEffects(state);
+        return;
+      }
+    }
+  }
+
+  // Carry the overshoot instead of zeroing it: at a 0.05 s frame and a short
+  // swing timer, dropping the remainder silently costs up to 5% attack speed.
+  // Looping also keeps the tick correct when a throttled tab hands us a long dt.
+  state.combat.playerAtkAcc += dt;
+  for (let i = 0; i < MAX_SWINGS_PER_TICK; i++) {
+    if (state.combat.playerAtkAcc < derived.attackInterval) break;
+    state.combat.playerAtkAcc -= derived.attackInterval;
+    playerSwing(state, 1);
+    if (!state.settings.autoBattle) {
+      syncCombatEffects(state);
+      return;
+    }
+    if (!state.combat.monster || state.combat.monster.hp <= 0) break;
+  }
+
+  const monster = state.combat.monster;
+  if (!monster || monster.hp <= 0) {
+    syncCombatEffects(state);
+    return;
+  }
+
+  const interval = monster.attackInterval * sinMonsterIntervalMult(state);
+  state.combat.monsterAtkAcc += dt;
+  if (state.combat.monsterAtkAcc >= interval) {
+    state.combat.monsterAtkAcc = Math.min(state.combat.monsterAtkAcc - interval, interval);
+    const mit = isPlayingSin(state) ? sinIncomingMultiplier(state) : 1;
+    const absorbed = isPlayingSin(state) ? sinOnPlayerHit(state) : { absorbed: false };
+    if (absorbed.absorbed) {
+      pushLog(state, "skill", "Эхо перехватило удар");
+      syncCombatEffects(state);
+      return;
+    }
+    const taken = pveBmMults(state, derived).taken;
+    let incoming = rollHit(monster.attack * taken, derived.defense, monster.isPvp ? 12 : 6, 150, monster.level);
+    if (state.combat.wardHits > 0) {
+      incoming = { ...incoming, value: Math.max(1, Math.round(incoming.value * 0.6)) };
+      state.combat.wardHits -= 1;
+    }
+    incoming = { ...incoming, value: Math.max(1, Math.round(incoming.value * mit)) };
+    state.character.hp = Math.max(0, state.character.hp - incoming.value);
+    state.combat.playerHitFlash = 0.18;
+    pushFloater(state, {
+      value: incoming.value,
+      isCrit: incoming.isCrit,
+      isHeal: false,
+      isPlayerTarget: true,
+    });
+    pushLog(
+      state,
+      incoming.isCrit ? "crit" : "hit",
+      `${monster.name} наносит ${incoming.value}${incoming.isCrit ? " (крит)" : ""}`,
+    );
+    if (state.character.hp <= 0) onPlayerDeath(state);
+  }
+
+  syncCombatEffects(state);
+}
+
+export function findItem(state: Draft, itemId: string) {
+  const invIdx = state.inventory.findIndex((it) => it?.id === itemId);
+  if (invIdx >= 0) return { where: "inventory" as const, index: invIdx, item: state.inventory[invIdx]! };
+  for (const slot of Object.keys(state.equipment) as (keyof Draft["equipment"])[]) {
+    if (state.equipment[slot]?.id === itemId) {
+      return { where: "equip" as const, slot, item: state.equipment[slot]! };
+    }
+  }
+  return null;
+}
+
+export { pushLog, spawnNext, claimCurrentSpot };
+export type { CombatLogEntry };

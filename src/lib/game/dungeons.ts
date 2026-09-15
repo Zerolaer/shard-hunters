@@ -1,0 +1,255 @@
+import { spotRequiredBm } from "./balance";
+import { LOCATION_BY_ID, recommendedLocationId, type LocationDef } from "./locations";
+import { FARM_SPOT_BY_ID, type FarmSpotDef } from "./spots";
+import type { DungeonSession, DungeonState, DungeonType } from "./types";
+
+export type { DungeonSession, DungeonState, DungeonType };
+
+export const DUNGEON_TYPES: DungeonType[] = ["xp", "gold", "ore", "loot"];
+
+export const DUNGEON_TYPE_LABEL: Record<DungeonType, string> = {
+  xp: "Опыт",
+  gold: "Золото",
+  ore: "Руда",
+  loot: "Дроп",
+};
+
+export const DUNGEON_TYPE_BLURB: Record<DungeonType, string> = {
+  xp: "Повышенный опыт с каждого убийства.",
+  gold: "Больше золота и осколков.",
+  ore: "Руда капает с каждого убийства.",
+  loot: "Выше шанс и качество дропа вещей.",
+};
+
+export interface DungeonRates {
+  xpMult: number;
+  goldMult: number;
+  orePerKill: number;
+  dropChanceMult: number;
+  rarityBias: number;
+}
+
+export interface DungeonHall {
+  id: string;
+  type: DungeonType;
+  name: string;
+  blurb: string;
+  /** Player level required to enter. */
+  minLevel: number;
+  /** Monster base level (also drives BM). */
+  baseLevel: number;
+  accent: string;
+  mobNames: string[];
+  bossName: string;
+  threat: number;
+  rates: DungeonRates;
+}
+
+export const DUNGEON_DURATION_MS = 60 * 60 * 1000;
+
+const TYPE_RATES: Record<DungeonType, DungeonRates> = {
+  xp: { xpMult: 2.6, goldMult: 1, orePerKill: 0, dropChanceMult: 1, rarityBias: 0 },
+  /** ×3.2 vs same-level open commons — clear gold-farm identity after the kill-gold buff. */
+  gold: { xpMult: 1, goldMult: 3.2, orePerKill: 0, dropChanceMult: 1, rarityBias: 0 },
+  ore: { xpMult: 1, goldMult: 1, orePerKill: 1, dropChanceMult: 1, rarityBias: 0 },
+  loot: { xpMult: 1, goldMult: 1.15, orePerKill: 0, dropChanceMult: 2.4, rarityBias: 0.18 },
+};
+
+const TYPE_ACCENT: Record<DungeonType, string> = {
+  xp: "#a78bfa",
+  gold: "#fbbf24",
+  ore: "#94a3b8",
+  loot: "#34d399",
+};
+
+const TYPE_HALL_PREFIX: Record<DungeonType, string> = {
+  xp: "Зал Эха",
+  gold: "Зал Монет",
+  ore: "Зал Жилы",
+  loot: "Зал Трофеев",
+};
+
+const TYPE_MOBS: Record<DungeonType, { mobs: string[]; boss: string }> = {
+  xp: {
+    mobs: ["Эхо-страж", "Ученик пустоты", "Тень опыта", "Скриб памяти"],
+    boss: "Хранитель Эха",
+  },
+  gold: {
+    mobs: ["Алчный страж", "Монетный голем", "Сборщик подати", "Золотой страж"],
+    boss: "Казначей Зала",
+  },
+  ore: {
+    mobs: ["Жильный краб", "Шахтный дух", "Рудный скорпион", "Каменный дозор"],
+    boss: "Сердце Жилы",
+  },
+  loot: {
+    mobs: ["Охотник за трофеями", "Реликварий", "Воришка кургана", "Страж ларца"],
+    boss: "Хранитель Добычи",
+  },
+};
+
+/** Hall brackets: enter by level; BM follows invested curve (soft death risk if under). */
+const HALL_BRACKETS = [
+  { minLevel: 1, baseLevel: 3 },
+  { minLevel: 10, baseLevel: 12 },
+  { minLevel: 20, baseLevel: 22 },
+  { minLevel: 30, baseLevel: 32 },
+  { minLevel: 40, baseLevel: 42 },
+  { minLevel: 50, baseLevel: 52 },
+  { minLevel: 60, baseLevel: 62 },
+  { minLevel: 70, baseLevel: 72 },
+  { minLevel: 80, baseLevel: 82 },
+  { minLevel: 90, baseLevel: 92 },
+  { minLevel: 100, baseLevel: 100 },
+] as const;
+
+function buildHalls(): DungeonHall[] {
+  const halls: DungeonHall[] = [];
+  for (const type of DUNGEON_TYPES) {
+    const flavor = TYPE_MOBS[type];
+    HALL_BRACKETS.forEach((b, i) => {
+      const tier = i + 1;
+      halls.push({
+        id: `dung-${type}-${b.minLevel}`,
+        type,
+        name: `${TYPE_HALL_PREFIX[type]} ${roman(tier)}`,
+        blurb: `Ур. ${b.minLevel}+ · ${DUNGEON_TYPE_BLURB[type]}`,
+        minLevel: b.minLevel,
+        baseLevel: b.baseLevel,
+        accent: TYPE_ACCENT[type],
+        mobNames: flavor.mobs,
+        bossName: flavor.boss,
+        threat: 1.12 + i * 0.055,
+        rates: { ...TYPE_RATES[type] },
+      });
+    });
+  }
+  return halls;
+}
+
+function roman(n: number) {
+  const map = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"];
+  return map[n - 1] ?? String(n);
+}
+
+export const DUNGEON_HALLS: DungeonHall[] = buildHalls();
+
+export const DUNGEON_HALL_BY_ID: Record<string, DungeonHall> = Object.fromEntries(
+  DUNGEON_HALLS.map((h) => [h.id, h]),
+);
+
+export function hallsForType(type: DungeonType) {
+  return DUNGEON_HALLS.filter((h) => h.type === type);
+}
+
+/**
+ * Recommended BM for a hall — sits above open-world commons of the same level.
+ * Uses rich-tier need × threat ramp so invested same-level kits are "ok", not free farm.
+ */
+export function dungeonRecommendedBm(hall: DungeonHall) {
+  const threatMult = 1 + (hall.threat - 1) * 0.9;
+  return Math.round(spotRequiredBm(hall.baseLevel, "rich", "normal") * threatMult);
+}
+
+/** Soft comfort line — below this, expect deaths (bm offense/defense punish harder). */
+export function dungeonComfortBm(hall: DungeonHall) {
+  return Math.round(dungeonRecommendedBm(hall) * 0.88);
+}
+
+export function hallAsLocation(hall: DungeonHall): LocationDef {
+  return {
+    id: hall.id,
+    name: hall.name,
+    blurb: hall.blurb,
+    minLevel: hall.minLevel,
+    accent: hall.accent,
+    mobNames: hall.mobNames,
+    bossName: hall.bossName,
+    baseLevel: hall.baseLevel,
+    regionId: "dungeons",
+    kind: "normal",
+    threat: hall.threat,
+    rarityBias: hall.rates.rarityBias,
+  };
+}
+
+export const DUNGEON_LOCATION_BY_ID: Record<string, LocationDef> = Object.fromEntries(
+  DUNGEON_HALLS.map((h) => [h.id, hallAsLocation(h)]),
+);
+
+export function dungeonSpotId(hallId: string) {
+  return `${hallId}-0-0`;
+}
+
+export function hallSpot(hall: DungeonHall): FarmSpotDef {
+  const rates = hall.rates;
+  return {
+    id: dungeonSpotId(hall.id),
+    locationId: hall.id,
+    row: 0,
+    col: 0,
+    name: "Центр зала",
+    tier: "commons",
+    dropChanceMult: rates.dropChanceMult,
+    rarityBias: rates.rarityBias,
+    xpMult: rates.xpMult,
+    goldMult: rates.goldMult,
+    danger: 1 + (hall.threat - 1) * 0.8,
+    pityKills: 8,
+    requiredBm: dungeonRecommendedBm(hall),
+  };
+}
+
+export const DUNGEON_SPOTS: FarmSpotDef[] = DUNGEON_HALLS.map(hallSpot);
+
+export const DUNGEON_SPOT_BY_ID: Record<string, FarmSpotDef> = Object.fromEntries(
+  DUNGEON_SPOTS.map((s) => [s.id, s]),
+);
+
+export function isDungeonLocationId(id: string) {
+  return id.startsWith("dung-");
+}
+
+export function emptyDungeonState(): DungeonState {
+  return { active: null, dailyUsed: {} };
+}
+
+export function localDayKey(now = Date.now()) {
+  const d = new Date(now);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function dungeonTypeAvailable(state: DungeonState, type: DungeonType, now = Date.now()) {
+  const used = state.dailyUsed[type];
+  return !used || used !== localDayKey(now);
+}
+
+export function dungeonRemainingMs(session: DungeonSession | null | undefined, now = Date.now()) {
+  if (!session) return 0;
+  return Math.max(0, session.endsAt - now);
+}
+
+export function formatDungeonCountdown(ms: number) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Ore drip on kill for ore halls — scales with hall base level. */
+export function dungeonOreOnKill(hall: DungeonHall) {
+  if (hall.rates.orePerKill <= 0) return 0;
+  return Math.max(1, Math.round(hall.rates.orePerKill * (1.2 + hall.baseLevel * 0.08)));
+}
+
+Object.assign(LOCATION_BY_ID, DUNGEON_LOCATION_BY_ID);
+Object.assign(FARM_SPOT_BY_ID, DUNGEON_SPOT_BY_ID);
+
+export function recommendedSafeLocationAfterDungeon(level: number, powerScore?: number) {
+  return recommendedLocationId(level, powerScore);
+}

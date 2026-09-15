@@ -1,0 +1,299 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Coins,
+  Gem,
+  Hammer,
+  PackageOpen,
+  Pickaxe,
+  Recycle,
+  ShieldCheck,
+  Shirt,
+  Wrench,
+  X,
+} from "lucide-react";
+import { MAX_ENHANCE } from "@/lib/game/constants";
+import {
+  ENHANCE_SAFE_LEVELS,
+  enhanceCost,
+  enhanceSafeFloor,
+  enhanceSuccessChance,
+  isEnhanceSafe,
+} from "@/lib/game/enhance";
+import { canWearItem } from "@/lib/game/equipment";
+import { formatNumber } from "@/lib/game/formulas";
+import type { EquipSlot, Item } from "@/lib/game/types";
+import { useGameStore } from "@/store/useGameStore";
+import { useUiStore } from "@/store/useUiStore";
+import { cn } from "@/lib/cn";
+import { ItemInspector } from "./ItemTooltip";
+
+export function lookupSelected(
+  inventory: Array<Item | null>,
+  equipment: Record<EquipSlot, Item | null>,
+  id: string | null,
+): { item: Item; inBag: boolean } | null {
+  if (!id) return null;
+  const invIdx = inventory.findIndex((it) => it?.id === id);
+  if (invIdx >= 0 && inventory[invIdx]) return { item: inventory[invIdx]!, inBag: true };
+  const eq = Object.values(equipment).find((it) => it?.id === id);
+  if (eq) return { item: eq, inBag: false };
+  return null;
+}
+
+export function ItemActionPanel({
+  dismissible = false,
+  onDismiss,
+  className,
+}: {
+  dismissible?: boolean;
+  onDismiss?: () => void;
+  className?: string;
+}) {
+  const selectedItemId = useUiStore((s) => s.selectedItemId);
+  const inventory = useGameStore((s) => s.inventory);
+  const equipment = useGameStore((s) => s.equipment);
+  const resources = useGameStore((s) => s.resources);
+  const enhanceItem = useGameStore((s) => s.enhanceItem);
+  const salvageItem = useGameStore((s) => s.salvageItem);
+  const sellItem = useGameStore((s) => s.sellItem);
+  const equipItem = useGameStore((s) => s.equipItem);
+  const unequipSlot = useGameStore((s) => s.unequipSlot);
+  const classId = useGameStore((s) => s.character.classId);
+  const message = useUiStore((s) => s.enhanceMessage);
+  const setEnhanceMessage = useUiStore((s) => s.setEnhanceMessage);
+  const dismissItemPanel = useUiStore((s) => s.dismissItemPanel);
+  const selectionMode = useUiStore((s) => s.selectionMode);
+  const setTab = useUiStore((s) => s.setTab);
+  const [previewLevel, setPreviewLevel] = useState(0);
+
+  const found = lookupSelected(inventory, equipment, selectedItemId);
+  const item = found?.item ?? null;
+  const inBag = found?.inBag ?? false;
+  const cost = item ? enhanceCost(item.enhanceLevel, item.itemLevel) : null;
+  const chance = item ? enhanceSuccessChance(item.enhanceLevel) : 0;
+  const safeNow = item ? isEnhanceSafe(item.enhanceLevel) : true;
+
+  function dismiss() {
+    if (onDismiss) onDismiss();
+    else dismissItemPanel();
+  }
+
+  useEffect(() => {
+    const current = lookupSelected(
+      useGameStore.getState().inventory,
+      useGameStore.getState().equipment,
+      selectedItemId,
+    );
+    setPreviewLevel(current?.item.enhanceLevel ?? 0);
+  }, [selectedItemId]);
+
+  // Item vanished (sold / salvaged)
+  useEffect(() => {
+    if (selectedItemId && !found) {
+      dismissItemPanel();
+    }
+  }, [selectedItemId, found, dismissItemPanel]);
+
+  useEffect(() => {
+    if (!selectedItemId) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (e.target instanceof HTMLElement) {
+        if (e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+      }
+      e.preventDefault();
+      if (onDismiss) onDismiss();
+      else useUiStore.getState().dismissItemPanel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedItemId, onDismiss]);
+
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      {dismissible && (
+        <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+          <div className="es-label flex-1">Предмет</div>
+          <button
+            type="button"
+            onClick={dismiss}
+            className="es-btn es-inv-control h-7 w-7 px-0"
+            title="Закрыть (Esc)"
+            aria-label="Закрыть панель предмета"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {item ? (
+        <div className="space-y-3">
+          <section>
+            <ItemInspector item={item} previewLevel={previewLevel} />
+          </section>
+
+          <section className="border-t border-white/10 pt-2.5">
+            <div className="es-label mb-1.5 flex items-center gap-1.5">
+              <Hammer className="h-3.5 w-3.5 text-[#c4b5fd]" />
+              Превью заточки
+              {previewLevel !== item.enhanceLevel && (
+                <span className="rounded bg-[#fbbf24]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#fbbf24]">
+                  +{previewLevel}
+                </span>
+              )}
+            </div>
+            <div className="es-enh-grid">
+              {Array.from({ length: MAX_ENHANCE + 1 }, (_, level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setPreviewLevel(level)}
+                  className={cn(
+                    "es-enh-chip",
+                    level === item.enhanceLevel && "is-actual",
+                    level === previewLevel && "is-preview",
+                  )}
+                  style={
+                    (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
+                      ? { borderColor: "#4ade8099", color: "#4ade80" }
+                      : undefined
+                  }
+                  aria-label={`Превью +${level}`}
+                  title={
+                    (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
+                      ? `+${level} — безопасный уровень: ниже него заточка не откатится`
+                      : level === item.enhanceLevel
+                        ? `Текущая заточка +${level}`
+                        : `Превью +${level}`
+                  }
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2 border-t border-white/10 pt-2.5">
+            <div className="es-label">Действия</div>
+            {item.enhanceLevel >= MAX_ENHANCE && (
+              <button
+                type="button"
+                onClick={() => setTab("workshop")}
+                className="es-btn es-inv-control w-full justify-center px-2.5"
+                title="Благословение и гнёзда под камни"
+              >
+                <Wrench className="h-3 w-3" />
+                {item.blessed ? "Мастерская: гнёзда" : "Мастерская: благословить"}
+              </button>
+            )}
+
+            {cost && item.enhanceLevel < MAX_ENHANCE && (
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-[#8aa0b4]">
+                <span className="font-mono text-white/80">{(chance * 100).toFixed(0)}%</span>
+                <span className="inline-flex items-center gap-1">
+                  <Coins className="h-3 w-3 text-[#fbbf24]" />
+                  {formatNumber(cost.gold)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Pickaxe className="h-3 w-3 text-white/45" />
+                  {cost.ore}
+                </span>
+                {cost.shards > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <Gem className="h-3 w-3 text-[#c4b5fd]" />
+                    {cost.shards}
+                  </span>
+                )}
+                <span className={cn("inline-flex items-center gap-1", safeNow ? "text-[#4ade80]" : "text-[#f87171]")}>
+                  <ShieldCheck className="h-3 w-3" />
+                  {safeNow
+                    ? "провал ничего не отнимет"
+                    : `при провале откат до +${enhanceSafeFloor(item.enhanceLevel)}`}
+                </span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const res = enhanceItem(item.id);
+                  setEnhanceMessage(res.message);
+                }}
+                disabled={item.enhanceLevel >= MAX_ENHANCE}
+                className="es-btn es-btn-cyan es-inv-control px-2.5"
+              >
+                <Hammer className="h-3 w-3" />
+                Заточить
+              </button>
+              {inBag && !selectionMode && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => equipItem(item.id)}
+                    disabled={!canWearItem(classId, item).ok}
+                    className="es-btn es-btn-amber es-inv-control px-2.5"
+                  >
+                    <Shirt className="h-3 w-3" /> Надеть
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sellItem(item.id);
+                      dismiss();
+                    }}
+                    className="es-btn es-inv-control px-2.5"
+                  >
+                    <Coins className="h-3 w-3" /> Продать
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      salvageItem(item.id);
+                      dismiss();
+                    }}
+                    className="es-btn es-inv-control px-2.5"
+                  >
+                    <Recycle className="h-3 w-3" /> Разобрать
+                  </button>
+                </>
+              )}
+              {!inBag && (
+                <button
+                  type="button"
+                  onClick={() => unequipSlot(item.slot)}
+                  className="es-btn es-inv-control px-2.5"
+                >
+                  <Shirt className="h-3 w-3" /> Снять
+                </button>
+              )}
+            </div>
+            {message && <p className="text-xs text-white/70">{message}</p>}
+          </section>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+          <PackageOpen className="h-8 w-8 text-white/20" />
+          <p className="text-xs text-[#8aa0b4]">Выберите предмет</p>
+        </div>
+      )}
+
+      <div className="mt-1 flex flex-wrap items-center gap-2.5 border-t border-white/10 pt-2 text-[11px] text-[#8aa0b4]">
+        <span className="inline-flex items-center gap-1">
+          <Coins className="h-3 w-3 text-[#fbbf24]" />
+          {formatNumber(resources.gold)}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Pickaxe className="h-3 w-3 text-white/45" />
+          {formatNumber(resources.ore)}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Gem className="h-3 w-3 text-[#c4b5fd]" />
+          {formatNumber(resources.shards)}
+        </span>
+      </div>
+    </div>
+  );
+}
