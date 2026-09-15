@@ -502,10 +502,17 @@ export interface DungeonSession {
   endsAt: number;
 }
 
+export interface DungeonPausedBudget {
+  dayKey: string;
+  remainingMs: number;
+}
+
 export interface DungeonState {
   active: DungeonSession | null;
-  /** Local day key YYYY-MM-DD when this type was last entered. */
+  /** Local day key YYYY-MM-DD when this type's hour fully elapsed. */
   dailyUsed: Partial<Record<DungeonType, string>>;
+  /** Leftover time after an early leave, valid only for that local day. */
+  paused: Partial<Record<DungeonType, DungeonPausedBudget>>;
 }
 
 export interface GameData {

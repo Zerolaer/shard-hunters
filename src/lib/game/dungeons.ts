@@ -211,7 +211,7 @@ export function isDungeonLocationId(id: string) {
 }
 
 export function emptyDungeonState(): DungeonState {
-  return { active: null, dailyUsed: {} };
+  return { active: null, dailyUsed: {}, paused: {} };
 }
 
 export function localDayKey(now = Date.now()) {
@@ -222,9 +222,66 @@ export function localDayKey(now = Date.now()) {
   return `${y}-${m}-${day}`;
 }
 
+export function normalizeDungeonState(
+  raw: DungeonState | null | undefined,
+  now = Date.now(),
+): DungeonState {
+  const state: DungeonState = {
+    active: raw?.active ?? null,
+    dailyUsed: { ...(raw?.dailyUsed ?? {}) },
+    paused: { ...(raw?.paused ?? {}) },
+  };
+  const day = localDayKey(now);
+  for (const type of DUNGEON_TYPES) {
+    const used = state.dailyUsed[type];
+    if (used && used !== day) delete state.dailyUsed[type];
+    const paused = state.paused[type];
+    if (!paused || paused.dayKey !== day) {
+      delete state.paused[type];
+      continue;
+    }
+    if (paused.remainingMs <= 0) {
+      state.dailyUsed[type] = day;
+      delete state.paused[type];
+    }
+  }
+  return state;
+}
+
+/** Old saves marked dailyUsed on enter. Keep the lock only if the hour already ended. */
+export function migrateDungeonPauseResume(raw: DungeonState | null | undefined, now = Date.now()) {
+  const state = normalizeDungeonState(raw, now);
+  const day = localDayKey(now);
+  const activeRemain = dungeonRemainingMs(state.active, now);
+  for (const type of DUNGEON_TYPES) {
+    if (state.dailyUsed[type] !== day) continue;
+    if (state.active?.type === type && activeRemain <= 0) continue;
+    delete state.dailyUsed[type];
+  }
+  return state;
+}
+
+export function dungeonPausedRemainingMs(state: DungeonState, type: DungeonType, now = Date.now()) {
+  const day = localDayKey(now);
+  if (state.dailyUsed[type] === day) return 0;
+  if (state.active?.type === type) return 0;
+  const paused = state.paused?.[type];
+  if (!paused || paused.dayKey !== day) return 0;
+  return Math.max(0, paused.remainingMs);
+}
+
+/** Remaining budget for a type today: active timer, paused leftover, or a fresh hour. */
+export function dungeonBudgetRemainingMs(state: DungeonState, type: DungeonType, now = Date.now()) {
+  const day = localDayKey(now);
+  if (state.dailyUsed[type] === day) return 0;
+  if (state.active?.type === type) return dungeonRemainingMs(state.active, now);
+  const paused = state.paused?.[type];
+  if (paused && paused.dayKey === day) return Math.max(0, paused.remainingMs);
+  return DUNGEON_DURATION_MS;
+}
+
 export function dungeonTypeAvailable(state: DungeonState, type: DungeonType, now = Date.now()) {
-  const used = state.dailyUsed[type];
-  return !used || used !== localDayKey(now);
+  return dungeonBudgetRemainingMs(state, type, now) > 0;
 }
 
 export function dungeonRemainingMs(session: DungeonSession | null | undefined, now = Date.now()) {

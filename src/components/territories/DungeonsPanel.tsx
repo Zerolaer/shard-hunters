@@ -17,9 +17,11 @@ import {
   DUNGEON_TYPE_LABEL,
   DUNGEON_TYPES,
   dungeonComfortBm,
+  dungeonPausedRemainingMs,
   dungeonRecommendedBm,
   dungeonRemainingMs,
   dungeonTypeAvailable,
+  emptyDungeonState,
   formatDungeonCountdown,
   hallsForType,
   type DungeonHall,
@@ -55,6 +57,8 @@ export function DungeonsPanel() {
   const [msg, setMsg] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  const dungeonState = dungeon ?? emptyDungeonState();
+
   useEffect(() => {
     if (!dungeon?.active) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -72,8 +76,8 @@ export function DungeonsPanel() {
         <div className="font-display text-[14px] text-white">Подземелья</div>
         <p className="mt-1 text-[11px] leading-snug text-[#8aa0b4]">
           Ежедневные часовые залы. Выберите тип награды, затем зал по уровню. Вход
-          по уровню; слабый БМ — будете умирать. Каждый тип — один раз в сутки; ранний
-          выход всё равно тратит вход.
+          по уровню; слабый БМ — будете умирать. Каждый тип — час в сутки. Выход
+          ставит таймер на паузу: можно вернуться и доиграть оставшееся время.
         </p>
 
         {active && activeHall ? (
@@ -110,7 +114,8 @@ export function DungeonsPanel() {
       <div className="grid grid-cols-4 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
         {DUNGEON_TYPES.map((t) => {
           const Icon = TYPE_ICON[t];
-          const available = dungeonTypeAvailable(dungeon ?? { active: null, dailyUsed: {} }, t);
+          const available = dungeonTypeAvailable(dungeonState, t, now);
+          const pausedMs = dungeonPausedRemainingMs(dungeonState, t, now);
           return (
             <button
               key={t}
@@ -121,11 +126,23 @@ export function DungeonsPanel() {
                 type === t && "es-btn-amber",
                 !available && "opacity-55",
               )}
-              title={available ? DUNGEON_TYPE_BLURB[t] : "Уже использовано сегодня"}
+              title={
+                available
+                  ? pausedMs > 0
+                    ? `Осталось ${formatDungeonCountdown(pausedMs)} — можно продолжить`
+                    : DUNGEON_TYPE_BLURB[t]
+                  : "Время на сегодня исчерпано"
+              }
             >
               <Icon className="h-3.5 w-3.5" />
               {DUNGEON_TYPE_LABEL[t]}
-              {!available ? <span className="text-[9px] text-white/40">сегодня</span> : null}
+              {!available ? (
+                <span className="text-[9px] text-white/40">сегодня</span>
+              ) : pausedMs > 0 ? (
+                <span className="text-[9px] tabular-nums text-white/55">
+                  {formatDungeonCountdown(pausedMs)}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -140,8 +157,9 @@ export function DungeonsPanel() {
           const locked = level < hall.minLevel;
           const weak = !locked && derived.powerScore < comfort;
           const okBm = !locked && derived.powerScore >= rec;
-          const available = dungeonTypeAvailable(dungeon ?? { active: null, dailyUsed: {} }, hall.type);
+          const available = dungeonTypeAvailable(dungeonState, hall.type, now);
           const busy = !!active;
+          const pausedMs = dungeonPausedRemainingMs(dungeonState, hall.type, now);
           return (
             <div
               key={hall.id}
@@ -195,7 +213,7 @@ export function DungeonsPanel() {
                   }}
                   className="es-btn es-btn-cyan es-inv-control shrink-0 px-2.5"
                 >
-                  Войти
+                  {pausedMs > 0 && !busy ? "Продолжить" : "Войти"}
                 </button>
               </div>
             </div>

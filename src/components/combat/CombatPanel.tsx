@@ -177,7 +177,7 @@ export function CombatPanel() {
             type="button"
             onClick={() => leaveDungeon()}
             className="es-btn h-8 w-full px-2.5 text-xs font-medium"
-            title="Ранний выход тратит ежедневный вход"
+            title="Выход ставит таймер на паузу. Можно вернуться сегодня."
           >
             <DoorOpen className="h-3.5 w-3.5" />
             Выйти

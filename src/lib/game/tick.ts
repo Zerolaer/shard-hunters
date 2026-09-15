@@ -50,6 +50,8 @@ import {
   dungeonRemainingMs,
   emptyDungeonState,
   isDungeonLocationId,
+  localDayKey,
+  normalizeDungeonState,
   recommendedSafeLocationAfterDungeon,
 } from "./dungeons";
 import { ensureHunters, simulateHunters } from "./hunters";
@@ -73,6 +75,7 @@ import { isSkillUnlocked } from "./talents";
 import {
   RARITIES,
   type CombatLogEntry,
+  type DungeonType,
   type GameData,
   type Gem,
   type Item,
@@ -226,8 +229,7 @@ function unlockLocationsByLevel(state: Draft, announce: boolean) {
 export function ensureWorld(state: Draft) {
   // Ensure dungeon locations/spots are registered (module side-effect + re-import safety).
   void DUNGEON_HALL_BY_ID;
-  if (!state.dungeon) state.dungeon = emptyDungeonState();
-  if (!state.dungeon.dailyUsed) state.dungeon.dailyUsed = {};
+  state.dungeon = normalizeDungeonState(state.dungeon);
   state.guild = normalizeGuild(state.guild);
   if (!state.mines) state.mines = {};
   for (const mine of MINES) {
@@ -507,11 +509,48 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
 export function tickDungeonSession(state: Draft, now = Date.now()) {
   if (!state.dungeon?.active) return;
   if (dungeonRemainingMs(state.dungeon.active, now) > 0) return;
-  endDungeonSession(state, "Время подземелья истекло. Вы возвращены в открытый мир.");
+  endDungeonSession(state, "Время подземелья истекло. Вы возвращены в открытый мир.", now);
 }
 
-export function endDungeonSession(state: Draft, reason: string) {
+function lockDungeonType(state: Draft, type: DungeonType, now: number) {
   if (!state.dungeon) state.dungeon = emptyDungeonState();
+  if (!state.dungeon.paused) state.dungeon.paused = {};
+  if (!state.dungeon.dailyUsed) state.dungeon.dailyUsed = {};
+  state.dungeon.dailyUsed[type] = localDayKey(now);
+  delete state.dungeon.paused[type];
+}
+
+function rememberPausedDungeon(state: Draft, type: DungeonType, remainingMs: number, now: number) {
+  if (!state.dungeon) state.dungeon = emptyDungeonState();
+  if (!state.dungeon.paused) state.dungeon.paused = {};
+  if (!state.dungeon.dailyUsed) state.dungeon.dailyUsed = {};
+  state.dungeon.paused[type] = { dayKey: localDayKey(now), remainingMs };
+  if (state.dungeon.dailyUsed[type] === localDayKey(now)) {
+    delete state.dungeon.dailyUsed[type];
+  }
+}
+
+/** Early leave: remaining time is paused and can be resumed today. */
+export function pauseDungeonSession(state: Draft, reason: string, now = Date.now()) {
+  if (!state.dungeon) state.dungeon = emptyDungeonState();
+  const was = state.dungeon.active;
+  const remain = dungeonRemainingMs(was, now);
+  if (was) {
+    if (remain > 0) rememberPausedDungeon(state, was.type, remain, now);
+    else lockDungeonType(state, was.type, now);
+  }
+  evacuateFromDungeon(state, reason);
+}
+
+/** Hour fully elapsed: type is locked until the next daily reset. */
+export function endDungeonSession(state: Draft, reason: string, now = Date.now()) {
+  if (!state.dungeon) state.dungeon = emptyDungeonState();
+  const was = state.dungeon.active;
+  if (was) lockDungeonType(state, was.type, now);
+  evacuateFromDungeon(state, reason);
+}
+
+function evacuateFromDungeon(state: Draft, reason: string) {
   const was = state.dungeon.active;
   state.dungeon.active = null;
   if (!was && !isDungeonLocationId(state.combat.locationId)) return;

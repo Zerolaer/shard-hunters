@@ -57,16 +57,18 @@ import {
   strikeGuildBoss,
 } from "@/lib/game/guild";
 import {
-  DUNGEON_DURATION_MS,
   DUNGEON_HALL_BY_ID,
   DUNGEON_TYPE_LABEL,
+  dungeonBudgetRemainingMs,
   dungeonComfortBm,
+  dungeonPausedRemainingMs,
   dungeonRecommendedBm,
   dungeonSpotId,
-  dungeonTypeAvailable,
   emptyDungeonState,
+  formatDungeonCountdown,
   isDungeonLocationId,
-  localDayKey,
+  migrateDungeonPauseResume,
+  normalizeDungeonState,
 } from "@/lib/game/dungeons";
 import { emptySinBuild, emptySinCombat } from "@/lib/game/sin/state";
 import { enhanceCost, enhanceLevelAfterFail, enhanceSuccessChance } from "@/lib/game/enhance";
@@ -127,10 +129,10 @@ import {
 import {
   applyOffline,
   claimCurrentSpot,
-  endDungeonSession,
   ensureWorld,
   findItem,
   flushAutoSellInventory,
+  pauseDungeonSession,
   playerOrePerSec,
   pushLog,
   reclaimGems,
@@ -289,7 +291,7 @@ export const useGameStore = create<GameStore>()(
       setLocation: (locationId) =>
         set((s) => {
           if (s.dungeon?.active || isDungeonLocationId(s.combat.locationId)) {
-            endDungeonSession(s, "Вы покинули подземелье. Ежедневный вход уже потрачен.");
+            pauseDungeonSession(s, "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.");
           }
           const loc = LOCATIONS.find((l) => l.id === locationId);
           if (!loc) return;
@@ -1002,7 +1004,7 @@ export const useGameStore = create<GameStore>()(
         let result = { ok: false, message: "Спот недоступен" };
         set((s) => {
           if (s.dungeon?.active || isDungeonLocationId(s.combat.locationId)) {
-            endDungeonSession(s, "Вы покинули подземелье. Ежедневный вход уже потрачен.");
+            pauseDungeonSession(s, "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.");
           }
           const def = FARM_SPOT_BY_ID[spotId];
           if (!def || isDungeonLocationId(def.locationId)) return;
@@ -1135,13 +1137,16 @@ export const useGameStore = create<GameStore>()(
             result = { ok: false, message: "Вы уже в подземелье" };
             return;
           }
-          if (!dungeonTypeAvailable(s.dungeon, hall.type)) {
+          const now = Date.now();
+          const budget = dungeonBudgetRemainingMs(s.dungeon, hall.type, now);
+          if (budget <= 0) {
             result = {
               ok: false,
               message: `${DUNGEON_TYPE_LABEL[hall.type]} уже пройден сегодня`,
             };
             return;
           }
+          const resuming = dungeonPausedRemainingMs(s.dungeon, hall.type, now) > 0;
           const derived = statsOf(s);
           const comfort = dungeonComfortBm(hall);
           const rec = dungeonRecommendedBm(hall);
@@ -1167,21 +1172,24 @@ export const useGameStore = create<GameStore>()(
           });
           s.combat.playerAtkAcc = 0;
           s.combat.monsterAtkAcc = 0;
-          const now = Date.now();
+          if (!s.dungeon.paused) s.dungeon.paused = {};
+          delete s.dungeon.paused[hall.type];
           s.dungeon.active = {
             type: hall.type,
             hallId: hall.id,
-            endsAt: now + DUNGEON_DURATION_MS,
+            endsAt: now + budget,
           };
-          s.dungeon.dailyUsed[hall.type] = localDayKey(now);
           s.settings.autoBattle = true;
           const bmWarn =
             derived.powerScore < comfort
               ? ` · БМ слабовато (рек. ${formatFullDigits(rec)}) — будете умирать`
               : "";
+          const timeNote = resuming
+            ? `Продолжение — осталось ${formatDungeonCountdown(budget)}.`
+            : "Час начался.";
           result = {
             ok: true,
-            message: `Подземелье: ${hall.name}. Час начался.${bmWarn}`,
+            message: `Подземелье: ${hall.name}. ${timeNote}${bmWarn}`,
           };
           pushLog(s, "system", result.message);
         });
@@ -1191,8 +1199,11 @@ export const useGameStore = create<GameStore>()(
         let result = { ok: false, message: "Вы не в подземелье" };
         set((s) => {
           if (!s.dungeon?.active && !isDungeonLocationId(s.combat.locationId)) return;
-          endDungeonSession(s, "Вы покинули подземелье. Ежедневный вход уже потрачен.");
-          result = { ok: true, message: "Выход из подземелья" };
+          pauseDungeonSession(
+            s,
+            "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.",
+          );
+          result = { ok: true, message: "Выход из подземелья. Таймер на паузе." };
         });
         return result;
       },
@@ -1343,19 +1354,23 @@ export const useGameStore = create<GameStore>()(
       name: PROFILE_PERSIST_NAME,
       storage: createJSONStorage(() => createAccountStorage(PROFILE_PERSIST_NAME)),
       skipHydration: true,
-      version: 6,
+      version: 7,
       migrate: (persisted, version) => {
         const p = persisted as GameData;
+        if (version < 7) {
+          p.dungeon = migrateDungeonPauseResume(p.dungeon);
+        }
         if (version < 6) {
           p.worldHunters = [];
           if (p.meta) p.meta.hunterAcc = 0;
         }
         if (version < 5) {
           if (!p.dungeon) {
-            p.dungeon = { active: null, dailyUsed: {} };
+            p.dungeon = emptyDungeonState();
           } else {
             if (p.dungeon.active === undefined) p.dungeon.active = null;
             if (!p.dungeon.dailyUsed) p.dungeon.dailyUsed = {};
+            if (!p.dungeon.paused) p.dungeon.paused = {};
           }
         }
         if (version < 4) {
@@ -1408,7 +1423,7 @@ export const useGameStore = create<GameStore>()(
         settings: s.settings,
         meta: s.meta,
         oreAcc: s.oreAcc,
-        dungeon: s.dungeon ?? emptyDungeonState(),
+        dungeon: normalizeDungeonState(s.dungeon ?? emptyDungeonState()),
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<GameData>;
@@ -1462,7 +1477,7 @@ export const useGameStore = create<GameStore>()(
           },
           gems: p.gems ?? [],
           inventory: normalizeInventory(p.inventory) ?? current.inventory,
-          dungeon: p.dungeon ?? emptyDungeonState(),
+          dungeon: normalizeDungeonState(p.dungeon ?? emptyDungeonState()),
           worldHunters: p.worldHunters ?? current.worldHunters,
         };
         tagSaveItems(merged);

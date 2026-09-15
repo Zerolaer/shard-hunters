@@ -131,7 +131,7 @@ export function createInitialState(opts?: { name?: string }): GameData {
     },
     meta: { lastTick: Date.now(), pendingOffline: null, hunterAcc: 0, hunterRoster: HUNTER_ROSTER_GEN },
     oreAcc: 0,
-    dungeon: { active: null, dailyUsed: {} },
+    dungeon: { active: null, dailyUsed: {}, paused: {} },
   };
 
   const derived = statsOf(state);
