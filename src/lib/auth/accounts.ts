@@ -1,9 +1,10 @@
+import { SAVE_FETCH_MS, fetchWithTimeout } from "./http";
 import { isUsableSavePayload, serializeSaveForStorage } from "./saveFormat";
 
 export const PROFILE_PERSIST_NAME = "shard-hunters-save-v2";
 export const SESSION_META_KEY = "shard-hunters-session-meta";
 
-const LEGACY_SAVE_KEYS = ["shard-hunters-save-v1", "shard-hunters-save"];
+const LEGACY_SAVE_KEYS = ["shard-hunters-save-v2", "shard-hunters-save-v1", "shard-hunters-save"];
 
 export interface AccountRecord {
   id: string;
@@ -63,6 +64,18 @@ export function migrateUnscopedSave(accountId: string, persistName: string) {
   }
 }
 
+/** Carry progress when the browser still has a save under a previous local account id. */
+export function migrateScopedSave(fromAccountId: string, toAccountId: string, persistName: string) {
+  if (typeof window === "undefined") return;
+  if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) return;
+  const dest = scopedSaveKey(persistName, toAccountId);
+  if (isUsableSave(localStorage.getItem(dest))) return;
+  const raw = readLocalSaveCache(fromAccountId, persistName);
+  if (!isUsableSave(raw)) return;
+  localStorage.setItem(dest, raw!);
+  localStorage.setItem(backupSaveKey(persistName, toAccountId), raw!);
+}
+
 export function writeLocalSaveCache(accountId: string, persistName: string, raw: string) {
   if (typeof window === "undefined") return;
   if (!isUsableSave(raw)) return;
@@ -89,12 +102,16 @@ export function readLocalSaveCache(accountId: string, persistName: string) {
 async function pushCloudSave(value: string) {
   try {
     const data = JSON.parse(value) as unknown;
-    await fetch("/api/save", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ data }),
-    });
+    await fetchWithTimeout(
+      "/api/save",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ data }),
+      },
+      SAVE_FETCH_MS,
+    );
   } catch (err) {
     console.error("[cloud save]", err);
   }
@@ -157,10 +174,13 @@ export function writeActiveSaveRaw(persistName: string, raw: string) {
   scheduleCloudSave(raw);
 }
 
-export async function pullCloudSaveIntoCache(accountId: string) {
+export async function pullCloudSaveIntoCache(accountId: string, previousAccountId?: string | null) {
+  if (previousAccountId) {
+    migrateScopedSave(previousAccountId, accountId, PROFILE_PERSIST_NAME);
+  }
   migrateUnscopedSave(accountId, PROFILE_PERSIST_NAME);
   try {
-    const res = await fetch("/api/save", { credentials: "include" });
+    const res = await fetchWithTimeout("/api/save", { credentials: "include" }, SAVE_FETCH_MS);
     if (!res.ok) return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
     const json = (await res.json()) as { ok?: boolean; data?: unknown };
     if (!json.ok || json.data == null) return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);

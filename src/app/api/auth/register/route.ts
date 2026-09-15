@@ -56,7 +56,9 @@ export async function POST(req: Request) {
     const message =
       err instanceof Error && err.message.includes("DATABASE_URL")
         ? "Сервер не настроен (нет DATABASE_URL)"
-        : "Не удалось создать аккаунт";
+        : err instanceof Error && err.message.includes("AUTH_SECRET")
+          ? "Сервер не настроен (нет AUTH_SECRET)"
+          : "Не удалось создать аккаунт";
     return NextResponse.json({ ok: false, message }, { status: 500 });
   }
 }

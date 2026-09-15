@@ -48,9 +48,10 @@ export async function getSession(): Promise<SessionPayload | null> {
 }
 
 export function sessionCookieOptions(maxAgeSeconds = SESSION_DAYS * 24 * 60 * 60) {
+  const secure = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax" as const,
     path: "/",
     maxAge: maxAgeSeconds,

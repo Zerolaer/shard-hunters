@@ -26,18 +26,25 @@ export function GameTicker({
       onReadyRef.current();
     };
 
+    // Always clear boot splash even if persist.rehydrate hangs.
     const timeout = window.setTimeout(finish, 800);
+    const hardTimeout = window.setTimeout(finish, 4000);
     const unsub = useGameStore.persist.onFinishHydration(finish);
 
-    void Promise.resolve(useGameStore.persist.rehydrate()).finally(() => {
-      window.clearTimeout(timeout);
-      finish();
-    });
+    void Promise.resolve(useGameStore.persist.rehydrate())
+      .catch((err) => {
+        console.error("[GameTicker] rehydrate failed", err);
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        finish();
+      });
 
     return () => {
       alive = false;
       unsub();
       window.clearTimeout(timeout);
+      window.clearTimeout(hardTimeout);
     };
   }, []);
 
