@@ -57,13 +57,13 @@ export function AuthScreen({
   }
 
   return (
-    <div className="relative z-10 flex h-dvh flex-col items-center justify-center overflow-hidden bg-app px-6 py-10">
-      <div className="es-frame w-full max-w-md p-8">
+    <div className="relative z-10 flex h-dvh flex-col items-center justify-center overflow-y-auto overflow-x-hidden bg-app px-6 py-10 max-lg:justify-start max-lg:px-4 max-lg:py-8">
+      <div className="es-frame w-full max-w-md p-8 max-lg:p-5">
         <div className="mb-8">
           <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-white/8 text-white">
             <Swords className="h-5 w-5" />
           </div>
-          <p className="font-display text-3xl font-semibold tracking-tight text-white">Shard Hunters</p>
+          <p className="font-display text-3xl font-semibold tracking-tight text-white max-lg:text-2xl">Shard Hunters</p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
             {mode === "login"
               ? "Вход в существующий аккаунт — прогресс подтянется с сервера"

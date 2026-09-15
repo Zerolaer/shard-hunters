@@ -51,9 +51,9 @@ export function InventoryPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid h-full min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(220px,32%)] grid-rows-[minmax(0,1fr)] items-stretch gap-3">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(220px,32%)] grid-rows-[minmax(0,1fr)] items-stretch gap-3 max-lg:grid-cols-1 max-lg:grid-rows-[minmax(0,1fr)_minmax(11rem,38%)]">
         <div className="flex min-h-0 min-w-0 flex-col overflow-visible">
-          <div className="mb-1.5 flex w-max max-w-full shrink-0 flex-nowrap items-center gap-1">
+          <div className="mb-1.5 flex w-max max-w-full shrink-0 flex-nowrap items-center gap-1 max-lg:w-full max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden">
             <InventoryFilters />
             <InventorySortControls />
             <AutoSellMenu />

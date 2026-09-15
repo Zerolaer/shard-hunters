@@ -5,12 +5,15 @@ import { AuthScreen } from "@/components/auth/AuthScreen";
 import { ClassPicker } from "@/components/auth/ClassPicker";
 import { CombatPanel } from "@/components/combat/CombatPanel";
 import { GameHeader } from "@/components/layout/GameHeader";
+import { MobileDock } from "@/components/layout/MobileDock";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { RightTabs } from "@/components/layout/RightTabs";
 import { GameTicker } from "@/components/GameTicker";
 import { flushCloudSave } from "@/lib/auth/accounts";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useGameStore } from "@/store/useGameStore";
+import { useUiStore } from "@/store/useUiStore";
+import { cn } from "@/lib/cn";
 
 const BOOT_UI_TIMEOUT_MS = 16_000;
 const SAVE_HYDRATE_UI_TIMEOUT_MS = 5_000;
@@ -20,6 +23,7 @@ export function GameShell() {
   const bootError = useAuthStore((s) => s.bootError);
   const accountId = useAuthStore((s) => s.accountId);
   const classId = useGameStore((s) => s.character.classId);
+  const mobileScreen = useUiStore((s) => s.mobileScreen);
   const [hydrated, setHydrated] = useState(false);
   const [bootStuck, setBootStuck] = useState(false);
   const [saveStuck, setSaveStuck] = useState(false);
@@ -132,14 +136,31 @@ export function GameShell() {
         <>
           <GameHeader />
           <OfflineBanner />
-          <main className="relative z-10 mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 grid-cols-1 grid-rows-2 gap-5 overflow-visible p-5 lg:grid-cols-[minmax(320px,38%)_minmax(0,1fr)] lg:grid-rows-1">
-            <div className="h-full min-h-0 min-w-0 overflow-visible">
+          <main
+            className={cn(
+              "relative z-10 mx-auto grid min-h-0 w-full max-w-[1600px] flex-1 overflow-visible max-lg:overflow-hidden",
+              "grid-cols-1 grid-rows-1 gap-0 p-0",
+              "lg:grid-cols-[minmax(320px,38%)_minmax(0,1fr)] lg:grid-rows-1 lg:gap-5 lg:p-5",
+            )}
+          >
+            <div
+              className={cn(
+                "h-full min-h-0 min-w-0 overflow-visible",
+                mobileScreen !== "combat" && "max-lg:hidden",
+              )}
+            >
               <CombatPanel />
             </div>
-            <div className="h-full min-h-0 min-w-0 overflow-visible">
+            <div
+              className={cn(
+                "h-full min-h-0 min-w-0 overflow-visible",
+                mobileScreen === "combat" && "max-lg:hidden",
+              )}
+            >
               <RightTabs />
             </div>
           </main>
+          <MobileDock />
         </>
       )}
     </div>

@@ -79,10 +79,11 @@ export function CombatPanel() {
   const dungeonRemain = dungeonRemainingMs(dungeon?.active, now);
 
   return (
-    <section className="es-frame flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-4">
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_5.5rem] items-start gap-x-1.5 gap-y-1.5 border-b border-white/[0.08] pb-3">
-        <div className="min-w-0">
-          <h2 className="truncate font-display text-[15px] font-medium tracking-tight text-white">
+    <section className="es-frame flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-4 max-lg:rounded-none max-lg:border-x-0 max-lg:border-b-0 max-lg:p-3">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_5.5rem] items-start gap-x-1.5 gap-y-1.5 border-b border-white/[0.08] pb-3 max-lg:grid-cols-[minmax(0,1fr)_5.5rem] max-lg:pb-2">
+        <div className="min-w-0 max-lg:col-start-1 max-lg:row-start-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="min-w-0 flex-1 truncate font-display text-[15px] font-medium tracking-tight text-white">
             {loc?.name ?? "Локация"}
             {inDungeon ? (
               <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
@@ -98,6 +99,19 @@ export function CombatPanel() {
               <span className="ml-2 font-sans text-xs font-normal text-white/70">PvP</span>
             ) : null}
           </h2>
+            <div className="lg:hidden">
+              <button
+                type="button"
+                onClick={toggleCombatLog}
+                className="es-btn h-8 w-8 shrink-0 p-0"
+                title={dense ? "Скрыть журнал" : "Показать журнал"}
+                aria-pressed={dense}
+                aria-label={dense ? "Скрыть журнал" : "Показать журнал"}
+              >
+                {dense ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
           {mode !== "pvp" ? (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
               {spot ? <span className="truncate">{spot.name}</span> : null}
@@ -112,7 +126,7 @@ export function CombatPanel() {
           ) : null}
         </div>
 
-        <div className="h-8 w-[5.5rem]">
+        <div className={cn("h-8 w-[5.5rem] max-lg:col-start-2 max-lg:row-start-1", !showBossCta && "max-lg:hidden")}>
           {showBossCta ? (
             <button
               type="button"
@@ -130,6 +144,7 @@ export function CombatPanel() {
           onClick={toggleAutoBattle}
           className={cn(
             "es-btn h-8 w-full px-2.5 text-xs font-medium",
+            showBossCta ? "max-lg:col-start-2 max-lg:row-start-2" : "max-lg:col-start-2 max-lg:row-start-1",
             autoBattle ? "es-btn-amber battle-pulse" : "",
           )}
           aria-pressed={autoBattle}
@@ -170,7 +185,7 @@ export function CombatPanel() {
           <div aria-hidden />
         )}
 
-        <div aria-hidden />
+        <div aria-hidden className="max-lg:hidden" />
 
         {inDungeon && dungeon?.active ? (
           <button
@@ -183,7 +198,7 @@ export function CombatPanel() {
             Выйти
           </button>
         ) : (
-          <div aria-hidden />
+          <div aria-hidden className="max-lg:hidden" />
         )}
       </div>
 
@@ -280,8 +295,8 @@ export function CombatPanel() {
 
       <SkillBar />
 
-      <div className={cn("flex min-h-0 flex-col", dense ? "min-h-[6rem] flex-[0.62]" : "shrink-0")}>
-        <div className="mb-1 flex shrink-0 items-center justify-between gap-2">
+      <div className={cn("flex min-h-0 flex-col", dense ? "min-h-[6rem] flex-[0.62]" : "shrink-0 max-lg:hidden")}>
+        <div className="mb-1 flex shrink-0 items-center justify-between gap-2 max-lg:hidden">
           <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
             <List className="h-3.5 w-3.5" />
             Журнал

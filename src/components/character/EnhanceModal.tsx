@@ -331,7 +331,7 @@ export function EnhanceModal() {
         aria-modal="true"
         aria-labelledby={titleId}
         data-enhance-modal
-        className="es-modal relative z-10 flex h-[min(90vh,36rem)] w-full max-w-3xl flex-col overflow-hidden"
+        className="es-modal relative z-10 flex h-[min(90vh,36rem)] w-full max-w-3xl flex-col overflow-hidden max-lg:h-[min(92dvh,40rem)]"
       >
         <div className="flex shrink-0 items-start gap-3 border-b border-white/10 px-4 py-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#c4b5fd]/25 bg-[#c4b5fd]/10">
@@ -356,7 +356,7 @@ export function EnhanceModal() {
         </div>
 
         <div className="es-enhance-split">
-          <section className="es-enhance-col border-r border-white/10 px-3 py-3">
+          <section className="es-enhance-col border-r border-white/10 px-3 py-3 max-lg:border-r-0 max-lg:border-b max-lg:border-white/10">
             <div className="es-label mb-1.5 flex min-h-[1rem] shrink-0 items-center justify-between gap-2">
               <span>Предметы</span>
               <span

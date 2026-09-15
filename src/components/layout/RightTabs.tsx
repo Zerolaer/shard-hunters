@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { Backpack, Castle, GitBranch, Map, Pickaxe, Shield, Trophy, User, Wrench } from "lucide-react";
 import { cn } from "@/lib/cn";
-import type { RightTab } from "@/lib/game/types";
 import { CharacterPanel } from "@/components/character/CharacterPanel";
 import { BuildPanel } from "@/components/character/BuildPanel";
 import { InventoryPanel } from "@/components/character/InventoryPanel";
@@ -16,18 +14,7 @@ import { DungeonsPanel } from "@/components/territories/DungeonsPanel";
 import { GuildPanel } from "@/components/territories/GuildPanel";
 import { RankingPanel } from "@/components/territories/RankingPanel";
 import { useUiStore } from "@/store/useUiStore";
-
-const TABS: { id: RightTab; label: string; icon: typeof User; hotkey: string }[] = [
-  { id: "character", label: "Персонаж", icon: User, hotkey: "1" },
-  { id: "build", label: "Билд", icon: GitBranch, hotkey: "2" },
-  { id: "inventory", label: "Инвентарь", icon: Backpack, hotkey: "3" },
-  { id: "workshop", label: "Мастерская", icon: Wrench, hotkey: "4" },
-  { id: "world", label: "Карта", icon: Map, hotkey: "5" },
-  { id: "mines", label: "Шахта", icon: Pickaxe, hotkey: "6" },
-  { id: "dungeons", label: "Данжи", icon: Castle, hotkey: "7" },
-  { id: "guild", label: "Гильдия", icon: Shield, hotkey: "8" },
-  { id: "ranking", label: "Рейтинг", icon: Trophy, hotkey: "9" },
-];
+import { RIGHT_TABS, tabById } from "./navTabs";
 
 function isTypingTarget(el: EventTarget | null) {
   if (!(el instanceof HTMLElement)) return false;
@@ -41,8 +28,8 @@ export function RightTabs() {
 
   const move = useCallback(
     (dir: 1 | -1) => {
-      const i = TABS.findIndex((t) => t.id === tab);
-      const next = TABS[(i + dir + TABS.length) % TABS.length]!;
+      const i = RIGHT_TABS.findIndex((t) => t.id === tab);
+      const next = RIGHT_TABS[(i + dir + RIGHT_TABS.length) % RIGHT_TABS.length]!;
       setTab(next.id);
     },
     [setTab, tab],
@@ -53,7 +40,7 @@ export function RightTabs() {
       if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTypingTarget(e.target)) return;
       if (e.key >= "1" && e.key <= "9") {
-        const next = TABS[Number(e.key) - 1];
+        const next = RIGHT_TABS[Number(e.key) - 1];
         if (next) {
           e.preventDefault();
           setTab(next.id);
@@ -70,10 +57,10 @@ export function RightTabs() {
         move(-1);
       } else if (e.key === "Home") {
         e.preventDefault();
-        setTab(TABS[0]!.id);
+        setTab(RIGHT_TABS[0]!.id);
       } else if (e.key === "End") {
         e.preventDefault();
-        setTab(TABS[TABS.length - 1]!.id);
+        setTab(RIGHT_TABS[RIGHT_TABS.length - 1]!.id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -86,9 +73,10 @@ export function RightTabs() {
   }, [tab]);
 
   return (
-    <section className="es-frame relative z-10 flex h-full min-h-0 flex-col overflow-visible">
-      <div ref={listRef} role="tablist" aria-label="Правая панель" className="rp-tabs shrink-0">
-        {TABS.map((t) => {
+    <section className="es-frame relative z-10 flex h-full min-h-0 flex-col overflow-visible max-lg:rounded-none max-lg:border-x-0 max-lg:border-b-0">
+      <div className="max-lg:hidden">
+        <div ref={listRef} role="tablist" aria-label="Правая панель" className="rp-tabs shrink-0">
+          {RIGHT_TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
           return (
@@ -109,12 +97,14 @@ export function RightTabs() {
             </button>
           );
         })}
+        </div>
       </div>
+      <MobilePanelTitle tab={tab} />
       <div
         role="tabpanel"
         id={`rp-panel-${tab}`}
         aria-labelledby={`rp-tab-${tab}`}
-        className="flex min-h-0 flex-1 flex-col overflow-visible p-4"
+        className="flex min-h-0 flex-1 flex-col overflow-visible p-4 max-lg:p-3"
       >
         {tab === "inventory" ? (
           <InventoryPanel />
@@ -140,5 +130,16 @@ export function RightTabs() {
       <PinnedItemPanel />
       <EnhanceModal />
     </section>
+  );
+}
+
+function MobilePanelTitle({ tab }: { tab: (typeof RIGHT_TABS)[number]["id"] }) {
+  const t = tabById(tab);
+  const Icon = t.icon;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.07] px-3 py-2 lg:hidden">
+      <Icon className="h-4 w-4 text-[var(--accent)]" />
+      <span className="font-display text-sm font-semibold text-white">{t.label}</span>
+    </div>
   );
 }

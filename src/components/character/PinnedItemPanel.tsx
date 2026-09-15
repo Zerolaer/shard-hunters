@@ -43,7 +43,7 @@ export function PinnedItemPanel() {
     <div
       ref={panelRef}
       data-item-action-panel
-      className="es-plate fixed bottom-4 right-4 z-[220] flex max-h-[min(92vh,44rem)] w-[min(100vw-1.5rem,22.5rem)] flex-col overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.72)]"
+      className="es-plate fixed bottom-4 right-4 z-[220] flex max-h-[min(92vh,44rem)] w-[min(100vw-1.5rem,22.5rem)] flex-col overflow-hidden shadow-[0_24px_64px_rgba(0,0,0,0.72)] max-lg:inset-x-2 max-lg:bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] max-lg:right-auto max-lg:w-auto max-lg:max-h-[min(62dvh,28rem)]"
       role="dialog"
       aria-label="Панель предмета"
     >

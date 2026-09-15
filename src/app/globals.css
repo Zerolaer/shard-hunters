@@ -1569,3 +1569,68 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* —— mobile shell (lg and below). Desktop rules above stay as-is. —— */
+
+.mobile-header {
+  padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+}
+
+.mobile-dock {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-more-sheet {
+  bottom: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 1023px) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  .rp-tabs {
+    display: none;
+  }
+
+  button,
+  .es-btn,
+  .es-tab,
+  .rp-tab {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .es-inv-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    gap: 4px;
+  }
+
+  .es-enhance-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(8.5rem, 0.85fr) minmax(0, 1.2fr);
+  }
+
+  .es-enh-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .world-map {
+    min-height: 220px;
+  }
+}
+
+@media (hover: none) {
+  .es-btn:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .sin-path-card:hover {
+    transform: none;
+  }
+
+  .sin-gem:hover:not(.pointer-events-none) {
+    transform: none;
+  }
+}

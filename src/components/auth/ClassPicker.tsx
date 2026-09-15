@@ -10,9 +10,9 @@ export function ClassPicker() {
   const level = useGameStore((s) => s.character.level);
 
   return (
-    <div className="relative z-10 flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto overflow-x-visible bg-app px-6 py-10">
+    <div className="relative z-10 flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto overflow-x-visible bg-app px-6 py-10 max-lg:justify-start max-lg:px-4 max-lg:py-8">
       <div className="w-full max-w-3xl">
-        <p className="font-display text-4xl font-semibold tracking-tight text-white">Выберите класс</p>
+        <p className="font-display text-4xl font-semibold tracking-tight text-white max-lg:text-2xl">Выберите класс</p>
         <p className="mt-2 max-w-xl text-base leading-relaxed text-[var(--muted)]">
           {name}, ур. {level}. Броня подходит всем. Оружие и вторичка — только своему классу.
           {level > 1 ? " Прогресс сохранится." : ""}

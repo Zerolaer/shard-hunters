@@ -2,8 +2,12 @@ import { create } from "zustand";
 import type { InventorySortMode } from "@/lib/game/inventory";
 import type { EquipSlot, Rarity, RightTab } from "@/lib/game/types";
 
+export type MobileScreen = "combat" | "panel";
+
 interface UiState {
   tab: RightTab;
+  /** Phone layout only: fight screen vs the selected right-panel. Desktop ignores this. */
+  mobileScreen: MobileScreen;
   selectedItemId: string | null;
   selectionMode: boolean;
   bulkSelectedIds: string[];
@@ -18,6 +22,8 @@ interface UiState {
   inventoryMessage: string | null;
   showCombatLog: boolean;
   setTab: (tab: RightTab) => void;
+  setMobileScreen: (screen: MobileScreen) => void;
+  openMobileTab: (tab: RightTab) => void;
   /** Select / pin an item for CraftPanel + PinnedItemPanel. Pass null to dismiss. */
   selectItem: (id: string | null) => void;
   dismissItemPanel: () => void;
@@ -58,6 +64,7 @@ function writeShowCombatLog(on: boolean) {
 
 export const useUiStore = create<UiState>((set) => ({
   tab: "character",
+  mobileScreen: "combat",
   selectedItemId: null,
   selectionMode: false,
   bulkSelectedIds: [],
@@ -70,6 +77,8 @@ export const useUiStore = create<UiState>((set) => ({
   inventoryMessage: null,
   showCombatLog: false,
   setTab: (tab) => set({ tab }),
+  setMobileScreen: (mobileScreen) => set({ mobileScreen }),
+  openMobileTab: (tab) => set({ tab, mobileScreen: "panel" }),
   selectItem: (id) => set({ selectedItemId: id }),
   dismissItemPanel: () => set({ selectedItemId: null, enhanceMessage: null }),
   setSelectionMode: (on) =>

@@ -28,7 +28,7 @@ export function SkillBar() {
   const accent = path ? SIN_PATH_BY_ID[path].accent : "#cfc9c6";
 
   return (
-    <div className="grid h-[52px] min-h-[52px] shrink-0 grid-cols-4 gap-2 overflow-visible">
+    <div className="grid h-[52px] min-h-[52px] shrink-0 grid-cols-4 gap-2 overflow-visible max-lg:h-[48px] max-lg:min-h-[48px] max-lg:gap-1.5">
       {hotbar.map((id, i) => {
         const sin =
           id && isSinSkillId(id)
@@ -49,7 +49,10 @@ export function SkillBar() {
         return (
           <div
             key={i}
-            className={cn("es-slot relative h-[52px] min-h-[52px] overflow-hidden px-2", def && "is-filled")}
+            className={cn(
+              "es-slot relative h-[52px] min-h-[52px] overflow-hidden px-2 max-lg:h-[48px] max-lg:min-h-[48px] max-lg:px-1.5",
+              def && "is-filled",
+            )}
           >
             {remainPct > 0 ? (
               <div className="skill-cd" aria-hidden>
