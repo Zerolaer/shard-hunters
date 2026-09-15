@@ -112,7 +112,7 @@ export function BuildPresetBar({ mode }: { mode: "classic" | "sin" }) {
   }
 
   return (
-    <div className="relative">
+    <div className="relative min-h-[2.25rem]">
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -122,27 +122,37 @@ export function BuildPresetBar({ mode }: { mode: "classic" | "sin" }) {
           <BookMarked className="h-3.5 w-3.5" />
           Готовый пресет
         </button>
-        {suggestFills > 0 ? (
-          <button
-            type="button"
-            onClick={() => {
-              const res = continuePreferredPreset();
-              setMsg(res.message);
-            }}
-            className="es-btn es-btn-amber es-inv-control px-2.5"
-            title="Добрать оставшиеся узлы и ранги по сохранённому пресету"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Добор +{suggestFills}
-          </button>
-        ) : null}
+        <div className="relative min-h-7 min-w-[7.75rem]">
+          {suggestFills > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                const res = continuePreferredPreset();
+                setMsg(res.message);
+              }}
+              className="es-btn es-btn-amber es-inv-control px-2.5"
+              title="Добрать оставшиеся узлы и ранги по сохранённому пресету"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Добор +{suggestFills}
+            </button>
+          ) : null}
+        </div>
         {pref ? (
           <span className="text-[10px] text-[#8aa0b4]">
             активен: {preferredClassic?.name ?? preferredSin?.name ?? pref}
           </span>
         ) : null}
       </div>
-      {msg ? <p className="mt-1.5 text-[11px] text-white/65">{msg}</p> : null}
+      <p
+        className={cn(
+          "mt-1.5 min-h-[1rem] text-[11px] text-white/65",
+          !msg && "invisible",
+        )}
+        aria-hidden={!msg}
+      >
+        {msg ?? "\u00a0"}
+      </p>
 
       {open ? (
         <div className="es-popover absolute left-0 right-0 z-30 mt-2 max-h-[min(70vh,28rem)] space-y-2 overflow-y-auto p-2.5">
@@ -168,6 +178,11 @@ export function BuildPresetBar({ mode }: { mode: "classic" | "sin" }) {
                         <div className="font-display text-[13px] text-white">
                           {p.name}
                           <span className="ml-1.5 font-sans text-[10px] text-[#8aa0b4]">{pathLabel}</span>
+                          {p.hybrid?.length ? (
+                            <span className="ml-1.5 rounded border border-[var(--accent)]/30 px-1 py-0.5 font-sans text-[9px] uppercase tracking-wide text-[var(--accent)]">
+                              несколько веток
+                            </span>
+                          ) : null}
                         </div>
                         <p className="mt-0.5 text-[11px] leading-snug text-[#8aa0b4]">{p.description}</p>
                         <p className="mt-1 text-[10px] leading-snug text-white/45">

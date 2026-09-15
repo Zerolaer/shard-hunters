@@ -346,21 +346,77 @@ export interface Resources {
   blessing?: number;
 }
 
+export type GuildJoinMode = "open" | "request" | "invite";
+export type GuildRole = "leader" | "officer" | "member";
+
 export interface GuildMember {
   id: string;
   name: string;
   contribution: number;
   isPlayer: boolean;
+  role?: GuildRole;
+  power?: number;
+}
+
+export interface GuildQuestState {
+  defId: string;
+  progress: number;
+  claimed: boolean;
+}
+
+export interface GuildBuffState {
+  id: string;
+  expiresAt: number;
+}
+
+export interface GuildApplication {
+  id: string;
+  hunterId: string;
+  name: string;
+  power: number;
+  incoming: boolean;
+  guildId: string;
+  guildName: string;
+}
+
+export interface GuildInvite {
+  id: string;
+  hunterId: string;
+  name: string;
+  power: number;
+  guildId: string;
+  guildName: string;
+  outgoing: boolean;
+}
+
+export interface GuildBossState {
+  defId: string;
+  hp: number;
+  maxHp: number;
+  dayKey: string;
+  lastStrikeAt: number;
 }
 
 export interface GuildState {
-  id: string;
+  id: string | null;
   name: string;
+  tag: string;
   level: number;
   xp: number;
   treasuryGold: number;
   treasuryOre: number;
+  coins: number;
   members: GuildMember[];
+  joinMode: GuildJoinMode;
+  motd: string;
+  skillRanks: Record<string, number>;
+  buffs: GuildBuffState[];
+  quests: GuildQuestState[];
+  questDay: string;
+  applications: GuildApplication[];
+  invites: GuildInvite[];
+  boss: GuildBossState | null;
+  createdByPlayer: boolean;
 }
 
 export interface MineOccupant {
@@ -382,6 +438,30 @@ export interface LeaderboardNpc {
   power: number;
 }
 
+export type HunterArchetype = "hardcore" | "regular" | "casual" | "crafter" | "dungeoneer";
+
+export type HunterActivity = "farm" | "dungeon" | "enhance" | "gems" | "market" | "mine" | "idle";
+
+/** Lightweight living rival — not a full GameData save. */
+export interface WorldHunter {
+  id: string;
+  name: string;
+  guild: string;
+  classId: HunterClass;
+  avatarId: string;
+  archetype: HunterArchetype;
+  level: number;
+  xp: number;
+  power: number;
+  enhance: number;
+  /** Multiplier vs invested expectedBm after enhance is applied. */
+  gearBias: number;
+  playRate: number;
+  activity: HunterActivity;
+  activityLabel: string;
+  activityUntil: number;
+}
+
 export interface Settings {
   autoBattle: boolean;
   /** Master switch — when false, no rarity auto-sells. */
@@ -397,9 +477,22 @@ export interface OfflineReport {
 export interface GameMeta {
   lastTick: number;
   pendingOffline: OfflineReport | null;
+  /** Leftover seconds for the hunter sim (batched, not every combat frame). */
+  hunterAcc?: number;
+  /** Living-roster generation; mismatch rebuilds starters. */
+  hunterRoster?: number;
 }
 
-export type RightTab = "character" | "build" | "inventory" | "workshop" | "world" | "guild";
+export type RightTab =
+  | "character"
+  | "build"
+  | "inventory"
+  | "workshop"
+  | "world"
+  | "mines"
+  | "dungeons"
+  | "guild"
+  | "ranking";
 
 export type DungeonType = "xp" | "gold" | "ore" | "loot";
 
@@ -429,6 +522,9 @@ export interface GameData {
   farm: Record<string, FarmSpotState>;
   talents: TalentState;
   sinBuild: SinBuildState;
+  /** Living rival hunters (~100). Cheap snapshots, not full character saves. */
+  worldHunters: WorldHunter[];
+  /** Derived top slice — kept so old UI/saves keep working. */
   leaderboard: LeaderboardNpc[];
   settings: Settings;
   meta: GameMeta;

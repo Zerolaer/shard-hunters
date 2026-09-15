@@ -42,20 +42,22 @@ export function SkillBar() {
             : !isSkillUnlocked(ranks, id)
           : false;
         const cooldown = def && "cooldown" in def ? def.cooldown : 1;
-        const pct = def && cd > 0 ? (cd / cooldown) * 100 : 0;
-        const link = i < 3 && hotbar[i] && hotbar[i + 1];
+        const remainPct = def && cd > 0 ? Math.min(100, (cd / cooldown) * 100) : 0;
+        const readyPct = remainPct > 0 ? 100 - remainPct : 0;
         const Icon = id && isSinSkillId(id) ? iconForSkill(id) : Sparkles;
+        const rank = id && isSinSkillId(id) ? skillPowerRank(sinBuild, id) : 0;
         return (
           <div
             key={i}
-            className={cn("es-slot relative h-[52px] min-h-[52px] overflow-visible px-2", def && "is-filled")}
+            className={cn("es-slot relative h-[52px] min-h-[52px] overflow-hidden px-2", def && "is-filled")}
           >
-            {link ? <span className="skill-link" aria-hidden /> : null}
-            {pct > 0 ? (
-              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
-                <div className="absolute inset-x-0 bottom-0 bg-[#07090d]/80" style={{ height: `${pct}%` }} />
+            {remainPct > 0 ? (
+              <div className="skill-cd" aria-hidden>
+                <div className="skill-cd-veil" style={{ height: `${remainPct}%` }} />
+                <div className="skill-cd-ready" style={{ height: `${readyPct}%` }} />
               </div>
             ) : null}
+            {rank > 0 ? <span className="skill-rank">{rank}</span> : null}
             <div className="relative z-10 flex h-full min-w-0 items-center gap-1.5">
               {def ? (
                 <SinGem
@@ -63,7 +65,6 @@ export function SkillBar() {
                   kind="skill"
                   accent={accent}
                   size="sm"
-                  rank={id && isSinSkillId(id) ? skillPowerRank(sinBuild, id) || undefined : undefined}
                   owned={!locked}
                   locked={locked}
                 />

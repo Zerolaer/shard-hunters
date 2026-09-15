@@ -1,6 +1,6 @@
 "use client";
 
-import { expectedBm } from "@/lib/game/balance";
+import { BM_FIT_LABEL, bmFit, expectedBm } from "@/lib/game/balance";
 import { MINES } from "@/lib/game/constants";
 import { formatFullDigits } from "@/lib/game/formulas";
 import { useDerivedStats, useGameStore, useOreRate } from "@/store/useGameStore";
@@ -29,6 +29,9 @@ export function MinesPanel() {
         const mine = mines[def.id];
         const occupants = mine?.occupants ?? [];
         const locked = level < def.minLevel;
+        const needBm = expectedBm(def.bmLevel ?? def.minLevel);
+        const weakBm = derived.powerScore < needBm;
+        const fit = bmFit(derived.powerScore, needBm);
         const hasPlayer = occupants.some((o) => o.isPlayer);
         const free = occupants.length < def.slots;
         const weakest = [...occupants].filter((o) => !o.isPlayer).sort((a, b) => a.power - b.power)[0];
@@ -42,8 +45,10 @@ export function MinesPanel() {
                 <div>
                   <div className="font-display text-[15px] font-semibold text-white">{def.name}</div>
                   <div className="mt-0.5 text-[11px] text-[#8aa0b4]">
-                    {occupants.length}/{def.slots} мест
-                    {locked ? ` · ур. ${def.minLevel}+` : ` · ${formatFullDigits(expectedBm(def.minLevel))} БМ`}
+                    {def.blurb}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-[#8aa0b4]">
+                    {occupants.length}/{def.slots} мест · ур. {def.minLevel}+ · {formatFullDigits(needBm)} БМ · {BM_FIT_LABEL[fit]}
                   </div>
                 </div>
               </div>
@@ -70,6 +75,8 @@ export function MinesPanel() {
                 </button>
               ) : locked ? (
                 <span className="text-[12px] text-[#6a7c8c]">Нужен {def.minLevel} ур.</span>
+              ) : weakBm ? (
+                <span className="text-[12px] text-[#ff8a8e]">Нужно {formatFullDigits(needBm)} БМ</span>
               ) : (
                 <>
                   {free && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { useGameStore } from "@/store/useGameStore";
 import type { LogKind } from "@/lib/game/types";
 import { cn } from "@/lib/cn";
@@ -34,17 +34,39 @@ const KIND_MARK: Partial<Record<LogKind, string>> = {
 export function CombatLog() {
   const log = useGameStore((s) => s.combat.log);
   const scroller = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    const snap = () => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    };
+    snap();
+    const ro = new ResizeObserver(snap);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !stick.current) return;
     el.scrollTop = el.scrollHeight;
   }, [log]);
 
   return (
     <div
       ref={scroller}
-      className="es-well h-full min-h-0 space-y-0.5 overflow-x-hidden overflow-y-auto p-2.5 text-xs leading-5"
+      className="es-well combat-log h-full min-h-0 space-y-0.5 p-2.5 text-xs leading-5"
+      onWheel={(e) => {
+        if (e.deltaY < 0) stick.current = false;
+      }}
+      onScroll={() => {
+        const el = scroller.current;
+        if (!el || stick.current) return;
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (dist <= 8) stick.current = true;
+      }}
     >
       {log.map((e) => {
         const mark = KIND_MARK[e.kind];

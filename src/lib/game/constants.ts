@@ -113,6 +113,8 @@ export interface MineDef {
   orePerSec: number;
   slots: number;
   minLevel: number;
+  /** Gate uses expectedBm(bmLevel). */
+  bmLevel: number;
   accent: string;
 }
 
@@ -124,25 +126,78 @@ export const MINES: MineDef[] = [
     orePerSec: 0.9,
     slots: 5,
     minLevel: 1,
+    bmLevel: 1,
     accent: "#a8a29e",
+  },
+  {
+    id: "vein",
+    name: "Жила новичков",
+    blurb: "Первый слой, где уже спорят за штольни.",
+    orePerSec: 1.6,
+    slots: 4,
+    minLevel: 4,
+    bmLevel: 8,
+    accent: "#d6d3d1",
   },
   {
     id: "middle",
     name: "Средняя шахта",
-    blurb: "Глубинный слой. Гильдии уже дерутся за штольни.",
+    blurb: "Глубинный слой. Гильдии дерутся за проход.",
     orePerSec: 2.6,
     slots: 4,
     minLevel: 8,
+    bmLevel: 16,
     accent: "#818cf8",
+  },
+  {
+    id: "deep",
+    name: "Глубинная выработка",
+    blurb: "Темнее и жирнее. Нужна боевая мощь, не только уровень.",
+    orePerSec: 4.2,
+    slots: 4,
+    minLevel: 14,
+    bmLevel: 28,
+    accent: "#60a5fa",
   },
   {
     id: "higher",
     name: "Высшая шахта",
-    blurb: "Сердце эссенции. Максимальный AFK-доход.",
+    blurb: "Сердце эссенции среднего круга.",
     orePerSec: 7.2,
     slots: 3,
     minLevel: 16,
+    bmLevel: 36,
     accent: "#fbbf24",
+  },
+  {
+    id: "core",
+    name: "Ядро эссенции",
+    blurb: "Сжатая жила. Мало мест, высокий БМ.",
+    orePerSec: 11.5,
+    slots: 3,
+    minLevel: 28,
+    bmLevel: 52,
+    accent: "#f97316",
+  },
+  {
+    id: "void",
+    name: "Пустотная шахта",
+    blurb: "Рифт под камнем. Только для сильных комплектов.",
+    orePerSec: 18,
+    slots: 2,
+    minLevel: 42,
+    bmLevel: 72,
+    accent: "#a855f7",
+  },
+  {
+    id: "myth",
+    name: "Мифический разлом",
+    blurb: "Конец штольни. Максимальный AFK относительно БМ.",
+    orePerSec: 28,
+    slots: 2,
+    minLevel: 60,
+    bmLevel: 95,
+    accent: "#fb7185",
   },
 ];
 

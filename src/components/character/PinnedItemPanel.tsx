@@ -28,7 +28,7 @@ export function PinnedItemPanel() {
       // those re-select or clear via their own handlers.
       if (target instanceof Element) {
         if (target.closest(".es-slot, .es-inv-cell, [data-item-action-panel]")) return;
-        if (target.closest('[role="tab"], .es-tab')) return;
+        if (target.closest('[role="tab"], .es-tab, .rp-tab')) return;
       }
       dismissItemPanel();
     }

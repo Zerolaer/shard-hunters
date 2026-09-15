@@ -3,8 +3,9 @@
 import { useMemo } from "react";
 import { canAllocateSinNode, SIN_NODES, SIN_NODE_BY_ID, type SinNodeDef } from "@/lib/game/sin/tree";
 import { iconForNode, sinNodeKind } from "@/lib/game/sin/icons";
-import type { SinPathId } from "@/lib/game/types";
+import type { SinArtId, SinPathId, SinSkillId, SkillId } from "@/lib/game/types";
 import { SinGem } from "./SinGem";
+import { cn } from "@/lib/cn";
 
 function pct(col: number, row: number) {
   return {
@@ -22,6 +23,8 @@ export function SinTreeCanvas({
   selectedId,
   onSelect,
   onAllocate,
+  hotbar = [],
+  arts = {},
 }: {
   view: SinPathId;
   accent: string;
@@ -31,8 +34,11 @@ export function SinTreeCanvas({
   selectedId: string | null;
   onSelect: (id: string) => void;
   onAllocate?: (id: string) => void;
+  hotbar?: Array<SkillId | null>;
+  arts?: Partial<Record<SinSkillId, SinArtId>>;
 }) {
   const nodes = useMemo(() => SIN_NODES.filter((n) => n.path === view), [view]);
+  const usedArts = useMemo(() => new Set(Object.values(arts).filter(Boolean) as SinArtId[]), [arts]);
 
   const edges = useMemo(() => {
     const out: { from: SinNodeDef; to: SinNodeDef; dashed: boolean }[] = [];
@@ -56,6 +62,7 @@ export function SinTreeCanvas({
         <span className="is-pass">пасс</span>
         <span className="is-art">сокет</span>
         <span className="is-key">капстоун</span>
+        <span className="is-hot">панель</span>
       </div>
       <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
         {edges.map((e) => {
@@ -87,12 +94,25 @@ export function SinTreeCanvas({
         const kind = sinNodeKind(node);
         const Icon = iconForNode(node);
         const offKey = !!node.keystone && node.path !== path;
+        const slot = node.skillId ? hotbar.indexOf(node.skillId) : -1;
+        const onBar = slot >= 0;
+        const socketedArt = node.skillId ? arts[node.skillId] : undefined;
+        const artInUse = !!node.artId && usedArts.has(node.artId);
         return (
           <div
             key={node.id}
-            className={`sin-node absolute -translate-x-1/2 -translate-y-1/2${selectedId === node.id ? " is-open" : ""}`}
+            className={cn(
+              "sin-node absolute -translate-x-1/2 -translate-y-1/2",
+              selectedId === node.id && "is-open",
+              onBar && "is-hot",
+              artInUse && "is-socketed",
+            )}
             style={{ left: `${x}%`, top: `${y}%` }}
           >
+            {onBar ? <span className="sin-hot-badge">Q{slot + 1}</span> : null}
+            {socketedArt ? (
+              <span className="sin-art-pip" title="Искусство в сокете" />
+            ) : null}
             <SinGem
               icon={Icon}
               kind={kind}

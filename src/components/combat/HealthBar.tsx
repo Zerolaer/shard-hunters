@@ -54,15 +54,15 @@ export function HealthBar({
   const isHp = variant === "player" || variant === "enemy";
   const fillClass = isHp ? undefined : variant === "xp" ? "es-bar-xp" : "es-bar-gold";
   const showMeta = !compact && label != null;
-  const showRow = showMeta || !!floaters;
+  const showRow = showMeta || floaters != null;
 
   return (
     <div className="relative w-full">
       {showRow ? (
         <div
           className={cn(
-            "flex items-end gap-2",
-            floaters ? (compact ? "mb-1 min-h-[18px]" : "mb-1.5 min-h-[22px]") : "mb-1.5",
+            "mb-1.5 flex items-end gap-2",
+            compact ? "min-h-[18px]" : "min-h-[22px]",
           )}
         >
           {showMeta ? (
@@ -71,7 +71,7 @@ export function HealthBar({
           <span className="shrink-0 whitespace-nowrap font-display text-xs font-semibold text-white">
             {Math.round(current)} / {Math.round(max)}
           </span>
-          {floaters ? (
+          {floaters != null ? (
             <div className="relative min-h-[20px] min-w-[72px] flex-1 overflow-visible">
               <FloatingDamage texts={floaters} />
             </div>

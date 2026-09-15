@@ -80,110 +80,118 @@ export function CombatPanel() {
 
   return (
     <section className="es-frame flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-4">
-      <div className="flex shrink-0 flex-col gap-1.5 border-b border-white/[0.08] pb-3">
-        <div className="flex h-10 items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate font-display text-[15px] font-medium tracking-tight text-white">
-              {loc?.name ?? "Локация"}
-              {inDungeon ? (
-                <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
-                  Подземелье
-                  {dungeon?.active ? ` · ${DUNGEON_TYPE_LABEL[dungeon.active.type]}` : ""}
-                </span>
-              ) : (
-                <span className="ml-2 font-sans text-xs font-normal text-[var(--muted)]">
-                  Этаж {floor}
-                </span>
-              )}
-              {mode === "pvp" ? (
-                <span className="ml-2 font-sans text-xs font-normal text-white/70">PvP</span>
-              ) : null}
-            </h2>
-            {mode !== "pvp" ? (
-              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
-                {spot ? <span className="truncate">{spot.name}</span> : null}
-                <span className="inline-flex items-center gap-0.5 tabular-nums text-white/55">
-                  <Zap className="h-2.5 w-2.5" />
-                  спот {formatFullDigits(spotBm)} БМ
-                </span>
-                {loc ? (
-                  <span className="tabular-nums">зона ~{formatFullDigits(locBm)} БМ</span>
-                ) : null}
-              </div>
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_5.5rem] items-start gap-x-1.5 gap-y-1.5 border-b border-white/[0.08] pb-3">
+        <div className="min-w-0">
+          <h2 className="truncate font-display text-[15px] font-medium tracking-tight text-white">
+            {loc?.name ?? "Локация"}
+            {inDungeon ? (
+              <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
+                Подземелье
+                {dungeon?.active ? ` · ${DUNGEON_TYPE_LABEL[dungeon.active.type]}` : ""}
+              </span>
+            ) : (
+              <span className="ml-2 font-sans text-xs font-normal text-[var(--muted)]">
+                Этаж {floor}
+              </span>
+            )}
+            {mode === "pvp" ? (
+              <span className="ml-2 font-sans text-xs font-normal text-white/70">PvP</span>
             ) : null}
-          </div>
-
-          <div className="flex h-8 shrink-0 items-center gap-1.5">
-            <div className="w-[5.5rem]">
-              {showBossCta ? (
-                <button
-                  type="button"
-                  onClick={challengeBoss}
-                  className="es-btn es-btn-boss h-8 w-full px-2.5 text-xs font-medium"
-                >
-                  <Crown className="h-3.5 w-3.5" />
-                  Босс
-                </button>
+          </h2>
+          {mode !== "pvp" ? (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
+              {spot ? <span className="truncate">{spot.name}</span> : null}
+              <span className="inline-flex items-center gap-0.5 tabular-nums text-white/55">
+                <Zap className="h-2.5 w-2.5" />
+                спот {formatFullDigits(spotBm)} БМ
+              </span>
+              {loc ? (
+                <span className="tabular-nums">зона ~{formatFullDigits(locBm)} БМ</span>
               ) : null}
             </div>
-            <button
-              type="button"
-              onClick={toggleAutoBattle}
-              className={cn(
-                "es-btn h-8 px-2.5 text-xs font-medium",
-                autoBattle ? "es-btn-amber battle-pulse" : "",
-              )}
-              aria-pressed={autoBattle}
-              aria-label={autoBattle ? "Авто-бой включён" : "Авто-бой выключен"}
-              title={autoBattle ? "Авто-бой включён" : "Авто-бой выключен"}
-            >
-              <Swords className="h-3.5 w-3.5" />
-              Авто
-            </button>
-          </div>
+          ) : null}
         </div>
 
-        {inDungeon && dungeon?.active ? (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-1 text-[11px] tabular-nums text-[var(--accent)]">
-              <Timer className="h-3.5 w-3.5" />
-              {formatDungeonCountdown(dungeonRemain)}
-            </span>
+        <div className="h-8 w-[5.5rem]">
+          {showBossCta ? (
             <button
               type="button"
-              onClick={() => leaveDungeon()}
-              className="es-btn es-inv-control h-7 px-2 text-[10px]"
-              title="Ранний выход тратит ежедневный вход"
+              onClick={challengeBoss}
+              className="es-btn es-btn-boss h-8 w-full px-2.5 text-xs font-medium"
             >
-              <DoorOpen className="h-3.5 w-3.5" />
-              Выйти
+              <Crown className="h-3.5 w-3.5" />
+              Босс
             </button>
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          onClick={toggleAutoBattle}
+          className={cn(
+            "es-btn h-8 w-full px-2.5 text-xs font-medium",
+            autoBattle ? "es-btn-amber battle-pulse" : "",
+          )}
+          aria-pressed={autoBattle}
+          aria-label={autoBattle ? "Авто-бой включён" : "Авто-бой выключен"}
+          title={autoBattle ? "Авто-бой включён" : "Авто-бой выключен"}
+        >
+          <Swords className="h-3.5 w-3.5" />
+          Авто
+        </button>
+
+        {mode !== "pvp" ? (
+          <div className="flex min-h-8 items-center gap-2">
+            {inDungeon && dungeon?.active ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-1 text-[11px] tabular-nums text-[var(--accent)]">
+                <Timer className="h-3.5 w-3.5" />
+                {formatDungeonCountdown(dungeonRemain)}
+              </span>
+            ) : (
+              <>
+                <div className="h-1 min-w-0 flex-1 max-w-[180px] overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width] duration-300",
+                      bossReady ? "bg-rose-400" : "bg-white/40",
+                    )}
+                    style={{
+                      width: bossReady ? "100%" : `${(killsToBoss / KILLS_FOR_BOSS) * 100}%`,
+                    }}
+                  />
+                </div>
+                <span className="shrink-0 text-[10px] tabular-nums text-white/40">
+                  {bossReady ? "босс готов" : `${killsToBoss}/${KILLS_FOR_BOSS} до босса`}
+                </span>
+              </>
+            )}
           </div>
-        ) : mode !== "pvp" ? (
-          <div className="flex items-center gap-2">
-            <div className="h-1 min-w-0 flex-1 max-w-[180px] overflow-hidden rounded-full bg-white/10">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-300",
-                  bossReady ? "bg-rose-400" : "bg-white/40",
-                )}
-                style={{
-                  width: bossReady ? "100%" : `${(killsToBoss / KILLS_FOR_BOSS) * 100}%`,
-                }}
-              />
-            </div>
-            <span className="shrink-0 text-[10px] tabular-nums text-white/40">
-              {bossReady ? "босс готов" : `${killsToBoss}/${KILLS_FOR_BOSS} до босса`}
-            </span>
-          </div>
-        ) : null}
+        ) : (
+          <div aria-hidden />
+        )}
+
+        <div aria-hidden />
+
+        {inDungeon && dungeon?.active ? (
+          <button
+            type="button"
+            onClick={() => leaveDungeon()}
+            className="es-btn h-8 w-full px-2.5 text-xs font-medium"
+            title="Ранний выход тратит ежедневный вход"
+          >
+            <DoorOpen className="h-3.5 w-3.5" />
+            Выйти
+          </button>
+        ) : (
+          <div aria-hidden />
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div
           className={cn(
             "combat-side combat-side-enemy flex flex-col",
-            dense ? "min-h-0 flex-1 gap-2 p-2.5" : "min-h-0 flex-1 gap-2.5 p-3",
+            dense ? "shrink-0 gap-1 p-2" : "min-h-0 flex-1 gap-2.5 p-3",
             !dense && hitFlash > 0 && "monster-hit",
             monster?.isPvp ? "is-pvp" : monster?.isBoss ? "is-boss" : "is-mob",
           )}
@@ -225,7 +233,7 @@ export function CombatPanel() {
                 variant="enemy"
                 floaters={enemyHits}
               />
-              <EffectPills effects={monsterEffects} kind="debuff" dense={dense} />
+              <EffectPills effects={monsterEffects} kind="debuff" dense={dense} singleLine />
             </>
           ) : (
             <div className="py-2 text-sm text-[#6a7c8c]">Нет цели</div>

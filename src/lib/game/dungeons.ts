@@ -15,10 +15,10 @@ export const DUNGEON_TYPE_LABEL: Record<DungeonType, string> = {
 };
 
 export const DUNGEON_TYPE_BLURB: Record<DungeonType, string> = {
-  xp: "Повышенный опыт с каждого убийства.",
-  gold: "Больше золота и осколков.",
-  ore: "Руда капает с каждого убийства.",
-  loot: "Выше шанс и качество дропа вещей.",
+  xp: "Часовой зал опыта: заменяет дневной фарм уровней.",
+  gold: "Часовой зал золота: дневная казна за один заход.",
+  ore: "Руда с каждого убийства — как смена в шахте.",
+  loot: "Шанс и качество дропа как за целый день охоты.",
 };
 
 export interface DungeonRates {
@@ -48,11 +48,11 @@ export interface DungeonHall {
 export const DUNGEON_DURATION_MS = 60 * 60 * 1000;
 
 const TYPE_RATES: Record<DungeonType, DungeonRates> = {
-  xp: { xpMult: 2.6, goldMult: 1, orePerKill: 0, dropChanceMult: 1, rarityBias: 0 },
-  /** ×3.2 vs same-level open commons — clear gold-farm identity after the kill-gold buff. */
-  gold: { xpMult: 1, goldMult: 3.2, orePerKill: 0, dropChanceMult: 1, rarityBias: 0 },
-  ore: { xpMult: 1, goldMult: 1, orePerKill: 1, dropChanceMult: 1, rarityBias: 0 },
-  loot: { xpMult: 1, goldMult: 1.15, orePerKill: 0, dropChanceMult: 2.4, rarityBias: 0.18 },
+  /** Hourly hall should replace a full day of open-world XP farm. */
+  xp: { xpMult: 9.5, goldMult: 1.35, orePerKill: 0, dropChanceMult: 1.35, rarityBias: 0.04 },
+  gold: { xpMult: 1.35, goldMult: 10, orePerKill: 0, dropChanceMult: 1.25, rarityBias: 0.03 },
+  ore: { xpMult: 1.2, goldMult: 1.25, orePerKill: 7, dropChanceMult: 1.15, rarityBias: 0.02 },
+  loot: { xpMult: 1.4, goldMult: 1.6, orePerKill: 0, dropChanceMult: 8.2, rarityBias: 0.34 },
 };
 
 const TYPE_ACCENT: Record<DungeonType, string> = {

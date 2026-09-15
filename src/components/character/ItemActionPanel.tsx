@@ -3,31 +3,24 @@
 import { useEffect, useState } from "react";
 import {
   Coins,
-  Gem,
   Hammer,
   PackageOpen,
-  Pickaxe,
   Recycle,
-  ShieldCheck,
   Shirt,
   Wrench,
   X,
 } from "lucide-react";
 import { MAX_ENHANCE } from "@/lib/game/constants";
-import {
-  ENHANCE_SAFE_LEVELS,
-  enhanceCost,
-  enhanceSafeFloor,
-  enhanceSuccessChance,
-  isEnhanceSafe,
-} from "@/lib/game/enhance";
+import { ENHANCE_SAFE_LEVELS } from "@/lib/game/enhance";
 import { canWearItem } from "@/lib/game/equipment";
-import { formatNumber } from "@/lib/game/formulas";
 import type { EquipSlot, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { cn } from "@/lib/cn";
 import { ItemInspector } from "./ItemTooltip";
+
+const ACTION_BTN =
+  "es-btn es-inv-control !h-9 w-full min-w-0 justify-center whitespace-nowrap px-2 text-[11px]";
 
 export function lookupSelected(
   inventory: Array<Item | null>,
@@ -54,7 +47,6 @@ export function ItemActionPanel({
   const selectedItemId = useUiStore((s) => s.selectedItemId);
   const inventory = useGameStore((s) => s.inventory);
   const equipment = useGameStore((s) => s.equipment);
-  const resources = useGameStore((s) => s.resources);
   const salvageItem = useGameStore((s) => s.salvageItem);
   const sellItem = useGameStore((s) => s.sellItem);
   const equipItem = useGameStore((s) => s.equipItem);
@@ -70,9 +62,9 @@ export function ItemActionPanel({
   const found = lookupSelected(inventory, equipment, selectedItemId);
   const item = found?.item ?? null;
   const inBag = found?.inBag ?? false;
-  const cost = item ? enhanceCost(item.enhanceLevel, item.itemLevel) : null;
-  const chance = item ? enhanceSuccessChance(item.enhanceLevel) : 0;
-  const safeNow = item ? isEnhanceSafe(item.enhanceLevel) : true;
+  const atMaxEnhance = !!item && item.enhanceLevel >= MAX_ENHANCE;
+  const wear = item ? canWearItem(classId, item) : { ok: false, reason: "" };
+  const bagActions = inBag && !selectionMode;
 
   function dismiss() {
     if (onDismiss) onDismiss();
@@ -175,98 +167,80 @@ export function ItemActionPanel({
           </section>
 
           <section className="space-y-2 border-t border-white/10 pt-2.5">
-            <div className="es-label">Действия</div>
-            {item.enhanceLevel >= MAX_ENHANCE && (
-              <button
-                type="button"
-                onClick={() => setTab("workshop")}
-                className="es-btn es-inv-control w-full justify-center px-2.5"
-                title="Благословение и гнёзда под камни"
-              >
-                <Wrench className="h-3 w-3" />
-                {item.blessed ? "Мастерская: гнёзда" : "Мастерская: благословить"}
-              </button>
-            )}
-
-            {cost && item.enhanceLevel < MAX_ENHANCE && (
-              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-[#8aa0b4]">
-                <span className="font-mono text-white/80">{(chance * 100).toFixed(0)}%</span>
-                <span className="inline-flex items-center gap-1">
-                  <Coins className="h-3 w-3 text-[#fbbf24]" />
-                  {formatNumber(cost.gold)}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <Pickaxe className="h-3 w-3 text-white/45" />
-                  {cost.ore}
-                </span>
-                {cost.shards > 0 && (
-                  <span className="inline-flex items-center gap-1">
-                    <Gem className="h-3 w-3 text-[#c4b5fd]" />
-                    {cost.shards}
-                  </span>
-                )}
-                <span className={cn("inline-flex items-center gap-1", safeNow ? "text-[#4ade80]" : "text-[#f87171]")}>
-                  <ShieldCheck className="h-3 w-3" />
-                  {safeNow
-                    ? "провал ничего не отнимет"
-                    : `при провале откат до +${enhanceSafeFloor(item.enhanceLevel)}`}
-                </span>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => openEnhanceModal([item.id])}
-                disabled={item.enhanceLevel >= MAX_ENHANCE}
-                className="es-btn es-btn-cyan es-inv-control px-2.5"
-              >
-                <Hammer className="h-3 w-3" />
-                Заточить
-              </button>
-              {inBag && !selectionMode && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => equipItem(item.id)}
-                    disabled={!canWearItem(classId, item).ok}
-                    className="es-btn es-btn-amber es-inv-control px-2.5"
-                  >
-                    <Shirt className="h-3 w-3" /> Надеть
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      sellItem(item.id);
-                      dismiss();
-                    }}
-                    className="es-btn es-inv-control px-2.5"
-                  >
-                    <Coins className="h-3 w-3" /> Продать
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      salvageItem(item.id);
-                      dismiss();
-                    }}
-                    className="es-btn es-inv-control px-2.5"
-                  >
-                    <Recycle className="h-3 w-3" /> Разобрать
-                  </button>
-                </>
+            <div className="grid grid-cols-2 gap-1.5">
+              {atMaxEnhance ? (
+                <button
+                  type="button"
+                  onClick={() => setTab("workshop")}
+                  className={ACTION_BTN}
+                  title="Максимум заточки. Благословение и гнёзда под камни — в Мастерской"
+                >
+                  <Wrench className="h-3 w-3 shrink-0" />
+                  Мастерская
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openEnhanceModal([item.id])}
+                  className={cn(ACTION_BTN, "es-btn-cyan")}
+                >
+                  <Hammer className="h-3 w-3 shrink-0" />
+                  Заточить
+                </button>
               )}
-              {!inBag && (
+              {inBag ? (
+                <button
+                  type="button"
+                  onClick={() => equipItem(item.id)}
+                  disabled={!bagActions || !wear.ok}
+                  className={cn(ACTION_BTN, "es-btn-amber")}
+                  title={!bagActions ? undefined : wear.ok ? undefined : wear.reason}
+                >
+                  <Shirt className="h-3 w-3 shrink-0" /> Надеть
+                </button>
+              ) : (
                 <button
                   type="button"
                   onClick={() => unequipSlot(item.slot)}
-                  className="es-btn es-inv-control px-2.5"
+                  className={ACTION_BTN}
                 >
-                  <Shirt className="h-3 w-3" /> Снять
+                  <Shirt className="h-3 w-3 shrink-0" /> Снять
                 </button>
               )}
+              <button
+                type="button"
+                disabled={!bagActions}
+                onClick={() => {
+                  sellItem(item.id);
+                  dismiss();
+                }}
+                className={ACTION_BTN}
+                title={!inBag ? "Сначала снимите предмет" : undefined}
+              >
+                <Coins className="h-3 w-3 shrink-0" /> Продать
+              </button>
+              <button
+                type="button"
+                disabled={!bagActions}
+                onClick={() => {
+                  salvageItem(item.id);
+                  dismiss();
+                }}
+                className={ACTION_BTN}
+                title={!inBag ? "Сначала снимите предмет" : undefined}
+              >
+                <Recycle className="h-3 w-3 shrink-0" /> Разобрать
+              </button>
             </div>
-            {message && <p className="text-xs text-white/70">{message}</p>}
+            <p
+              className={cn(
+                "min-h-[1rem] text-xs text-white/70",
+                !message && "invisible",
+              )}
+              aria-hidden={!message}
+            >
+              {message ?? "\u00a0"}
+            </p>
           </section>
         </div>
       ) : (
@@ -275,21 +249,6 @@ export function ItemActionPanel({
           <p className="text-xs text-[#8aa0b4]">Выберите предмет</p>
         </div>
       )}
-
-      <div className="mt-1 flex flex-wrap items-center gap-2.5 border-t border-white/10 pt-2 text-[11px] text-[#8aa0b4]">
-        <span className="inline-flex items-center gap-1">
-          <Coins className="h-3 w-3 text-[#fbbf24]" />
-          {formatNumber(resources.gold)}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Pickaxe className="h-3 w-3 text-white/45" />
-          {formatNumber(resources.ore)}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Gem className="h-3 w-3 text-[#c4b5fd]" />
-          {formatNumber(resources.shards)}
-        </span>
-      </div>
     </div>
   );
 }

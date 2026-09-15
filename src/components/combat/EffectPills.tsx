@@ -60,24 +60,35 @@ export function EffectPills({
   effects,
   kind,
   dense = false,
+  singleLine = false,
 }: {
   effects: CombatEffect[];
   kind: "buff" | "debuff";
   dense?: boolean;
+  singleLine?: boolean;
 }) {
   const visible = effects.filter((e) => e.kind === kind);
+  const max = singleLine ? (dense ? 4 : 5) : 99;
+  const overflow = Math.max(0, visible.length - max);
+  const shown = overflow > 0 ? visible.slice(0, max - 1) : visible.slice(0, max);
+  const extra = visible.length - shown.length;
   const pillSize = dense
     ? "gap-1 px-1.5 py-0.5 text-[10px]"
     : "gap-1.5 px-2 py-1 text-[11px]";
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-wrap items-center",
-        dense ? "min-h-[18px] gap-1" : "min-h-[22px] gap-1.5",
+        "flex shrink-0 items-center",
+        singleLine ? "flex-nowrap overflow-hidden" : "flex-wrap",
+        visible.length === 0 && singleLine
+          ? "min-h-0 gap-0"
+          : dense
+            ? "min-h-[18px] gap-1"
+            : "min-h-[22px] gap-1.5",
       )}
       aria-label={kind === "buff" ? "Баффы" : "Дебаффы"}
     >
-      {visible.map((effect) => {
+      {shown.map((effect) => {
         const Icon = ICONS[effect.icon] ?? Sparkles;
         return (
           <span
@@ -97,7 +108,21 @@ export function EffectPills({
           </span>
         );
       })}
-      {visible.length === 0 ? (
+      {extra > 0 ? (
+        <span
+          title={`Ещё ${extra}`}
+          className={cn(
+            "inline-flex shrink-0 items-center rounded-lg border leading-none tabular-nums",
+            pillSize,
+            kind === "debuff"
+              ? "border-white/10 bg-black/70 text-white/80"
+              : "border-white/14 bg-white/10 text-white",
+          )}
+        >
+          +{extra}
+        </span>
+      ) : null}
+      {visible.length === 0 && !singleLine ? (
         <span
           aria-hidden
           className={cn(

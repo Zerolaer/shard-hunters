@@ -268,6 +268,8 @@ export function SinBuildPanel() {
               ranks={ranks}
               points={points}
               selectedId={selectedId}
+              hotbar={hotbar}
+              arts={arts}
               onSelect={(id) => {
                 setSelectedId(id);
                 setFocusSkill(SIN_NODE_BY_ID[id]?.skillId ?? null);
@@ -509,7 +511,6 @@ export function SinBuildPanel() {
                       resolveSinOpts(sinBuild, id as SinSkillId),
                     )
                   : null;
-                const link = i < 3 && hotbar[i] && hotbar[i + 1];
                 return (
                   <button
                     key={i}
@@ -530,7 +531,6 @@ export function SinBuildPanel() {
                       skill && "ring-1 ring-[var(--accent)]/35",
                     )}
                   >
-                    {link ? <span className="skill-link" aria-hidden /> : null}
                     {skill ? (
                       <SinGem
                         icon={iconForSkill(id as SinSkillId)}

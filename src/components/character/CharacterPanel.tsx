@@ -42,15 +42,13 @@ export function CharacterPanel() {
                 <Zap className="h-3.5 w-3.5" />
                 {formatFullDigits(derived.powerScore)}
               </span>
+              {def ? (
+                <span className="text-[11px] text-white/40" style={{ color: `${accent}cc` }}>
+                  {def.name}
+                </span>
+              ) : null}
             </div>
-            {def ? (
-              <div className="mt-1 text-[12px] text-white/40">
-                <span style={{ color: `${accent}cc` }}>{def.name}</span>
-                <span className="mx-1.5 text-white/20">·</span>
-                <span>{def.blurb}</span>
-              </div>
-            ) : null}
-            <div className="mt-2.5 max-w-[260px]">
+            <div className="mt-2 max-w-[280px]">
               <div className="mb-1 flex justify-between text-[10px] text-white/40">
                 <span>Опыт</span>
                 <span className="tabular-nums">
@@ -60,16 +58,18 @@ export function CharacterPanel() {
               <HealthBar current={character.xp} max={need} variant="xp" compact />
             </div>
           </div>
-          {talentPoints > 0 ? (
-            <button
-              type="button"
-              onClick={() => setTab("build")}
-              className="es-btn es-btn-amber shrink-0 px-3 py-2 text-xs font-medium"
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              {talentPoints} очк.
-            </button>
-          ) : null}
+          <div className="relative h-9 w-[5.75rem] shrink-0">
+            {talentPoints > 0 ? (
+              <button
+                type="button"
+                onClick={() => setTab("build")}
+                className="es-btn es-btn-amber absolute inset-0 px-3 text-xs font-medium"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                {talentPoints} очк.
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

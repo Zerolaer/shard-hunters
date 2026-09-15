@@ -13,6 +13,7 @@ import {
   xpToNext as xpToNextOf,
 } from "./balance";
 import { CLASS_DEFS } from "./classes";
+import { guildCombatBonuses } from "./guild";
 import { SKILLS } from "./constants";
 import { itemGemStat, socketedGems } from "./gems";
 import { rand } from "./rng";
@@ -249,7 +250,12 @@ export function deriveStats(
     accuracy: talents.accuracy + sin.accuracy,
   };
   const cls = character.classId ? CLASS_DEFS[character.classId].passive : null;
+  const guildB = guildCombatBonuses(guild);
   bonus.lifesteal += cls?.lifesteal ?? 0;
+  bonus.attack += guildB.attack;
+  bonus.health += guildB.health;
+  bonus.defense += guildB.defense;
+  bonus.skillHaste += guildB.skillHaste;
   const str = character.strength + gear.strength + bonus.strength;
   const agi = character.agility + gear.agility + bonus.agility + (cls?.agility ?? 0);
   const end = character.endurance + gear.endurance + bonus.endurance;
@@ -298,8 +304,8 @@ export function deriveStats(
     (1 + (critChance / 100) * (critDamage / 100 - 1));
   const dps = (avgHit / attackInterval) * (1 + skillDamageBonus * 0.35);
 
-  const xpBonus = (guild.level - 1) * 0.02 + bonus.xpBonus;
-  const dropBonus = (guild.level - 1) * 0.015 + bonus.dropBonus;
+  const xpBonus = bonus.xpBonus + guildB.xpBonus;
+  const dropBonus = bonus.dropBonus + guildB.dropBonus;
 
   const accuracy = clamp(
     PLAYER.accBase + agi * PLAYER.accPerAgi + gear.accuracy + bonus.accuracy + (cls?.accuracy ?? 0),
@@ -325,7 +331,7 @@ export function deriveStats(
     critDamage,
     accuracy,
     talentRankSum,
-    guildLevel: guild.level,
+    guildLevel: guild.id ? guild.level : 1,
   });
 
   return {

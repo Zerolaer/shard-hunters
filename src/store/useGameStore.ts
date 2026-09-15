@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import { createAccountStorage, PROFILE_PERSIST_NAME } from "@/lib/auth/accounts";
+import { expectedBm } from "@/lib/game/balance";
 import { CLASS_DEFS } from "@/lib/game/classes";
 import { applyClassChoice, migrateAssassinBuild, tagSaveItems } from "@/lib/game/classKit";
 import { canWearItem } from "@/lib/game/equipment";
@@ -37,6 +38,24 @@ import {
   type AvatarId,
 } from "@/lib/game/avatars";
 import { createInitialState } from "@/lib/game/createInitialState";
+import {
+  acceptGuildInvite,
+  acceptIncomingApplication,
+  activateGuildBuff,
+  applyToWorldGuild,
+  buyGuildShopItem,
+  claimQuestReward,
+  createPlayerGuild,
+  declineIncomingApplication,
+  inviteHunterToGuild,
+  joinWorldGuild,
+  leavePlayerGuild,
+  noteGuildGoldTribute,
+  normalizeGuild,
+  rankGuildSkill,
+  setGuildJoinMode,
+  strikeGuildBoss,
+} from "@/lib/game/guild";
 import {
   DUNGEON_DURATION_MS,
   DUNGEON_HALL_BY_ID,
@@ -125,6 +144,7 @@ import type {
   EquipSlot,
   GameData,
   GemRank,
+  GuildJoinMode,
   HunterClass,
   Rarity,
   SkillId,
@@ -182,6 +202,20 @@ export interface GameStore extends GameData {
   enterDungeon: (hallId: string) => { ok: boolean; message: string };
   leaveDungeon: () => { ok: boolean; message: string };
   donateToGuild: (kind: "gold" | "ore", amount: number) => void;
+  createGuild: (name: string, tag: string, joinMode: GuildJoinMode, motd: string) => { ok: boolean; message: string };
+  leaveGuild: () => { ok: boolean; message: string };
+  joinListedGuild: (guildId: string) => { ok: boolean; message: string };
+  applyListedGuild: (guildId: string) => { ok: boolean; message: string };
+  acceptInvite: (inviteId: string) => { ok: boolean; message: string };
+  acceptApplicant: (applicationId: string) => { ok: boolean; message: string };
+  declineApplicant: (applicationId: string) => { ok: boolean; message: string };
+  inviteToGuild: (hunter: { id: string; name: string; power: number }) => { ok: boolean; message: string };
+  setJoinMode: (mode: GuildJoinMode) => { ok: boolean; message: string };
+  claimGuildQuest: (defId: string) => { ok: boolean; message: string };
+  strikeGuildBoss: () => { ok: boolean; message: string };
+  buyGuildItem: (itemId: string) => { ok: boolean; message: string };
+  rankGuildSkill: (skillId: string) => { ok: boolean; message: string };
+  activateGuildBuff: (buffId: string) => { ok: boolean; message: string };
   resetSave: () => void;
 }
 
@@ -1038,6 +1072,11 @@ export const useGameStore = create<GameStore>()(
           const mine = s.mines[mineId];
           if (!mine) return;
           const derived = statsOf(s);
+          const needBm = expectedBm(def.bmLevel ?? def.minLevel);
+          if (derived.powerScore < needBm) {
+            result = { ok: false, message: `Нужно ${formatFullDigits(needBm)} БМ` };
+            return;
+          }
 
           for (const m of Object.values(s.mines)) {
             m.occupants = m.occupants.filter((o) => !o.isPlayer);
@@ -1159,6 +1198,7 @@ export const useGameStore = create<GameStore>()(
       },
       donateToGuild: (kind, amount) =>
         set((s) => {
+          if (!s.guild.id) return;
           const qty = Math.floor(amount);
           if (!Number.isFinite(qty) || qty <= 0) return;
           if (kind === "gold") {
@@ -1166,11 +1206,14 @@ export const useGameStore = create<GameStore>()(
             s.resources.gold -= qty;
             s.guild.treasuryGold += qty;
             s.guild.xp += Math.round(qty * 0.12);
+            s.guild.coins += Math.max(0, Math.floor(qty / 55));
+            noteGuildGoldTribute(s.guild, qty);
           } else {
             if (s.resources.ore < qty) return;
             s.resources.ore -= qty;
             s.guild.treasuryOre += qty;
             s.guild.xp += qty * 3;
+            s.guild.coins += Math.max(0, Math.floor(qty / 12));
           }
           const player = s.guild.members.find((m) => m.isPlayer);
           if (player) player.contribution += qty;
@@ -1180,6 +1223,117 @@ export const useGameStore = create<GameStore>()(
             pushLog(s, "system", `Гильдия «${s.guild.name}» — уровень ${s.guild.level}! Баффы усилены.`);
           }
         }),
+      createGuild: (name, tag, joinMode, motd) => {
+        let result = { ok: false, message: "Не удалось создать" };
+        set((s) => {
+          result = createPlayerGuild(s, name, tag, joinMode, motd);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      leaveGuild: () => {
+        let result = { ok: false, message: "Вы не в гильдии" };
+        set((s) => {
+          result = leavePlayerGuild(s);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      joinListedGuild: (guildId) => {
+        let result = { ok: false, message: "Нельзя вступить" };
+        set((s) => {
+          result = joinWorldGuild(s, guildId, statsOf(s).powerScore);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      applyListedGuild: (guildId) => {
+        let result = { ok: false, message: "Нельзя подать заявку" };
+        set((s) => {
+          result = applyToWorldGuild(s, guildId, statsOf(s).powerScore);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      acceptInvite: (inviteId) => {
+        let result = { ok: false, message: "Нет приглашения" };
+        set((s) => {
+          result = acceptGuildInvite(s, inviteId, statsOf(s).powerScore);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      acceptApplicant: (applicationId) => {
+        let result = { ok: false, message: "Нет заявки" };
+        set((s) => {
+          result = acceptIncomingApplication(s, applicationId);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      declineApplicant: (applicationId) => {
+        let result = { ok: false, message: "Нет заявки" };
+        set((s) => {
+          result = declineIncomingApplication(s.guild, applicationId);
+        });
+        return result;
+      },
+      inviteToGuild: (hunter) => {
+        let result = { ok: false, message: "Нельзя пригласить" };
+        set((s) => {
+          result = inviteHunterToGuild(s, hunter);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      setJoinMode: (mode) => {
+        let result = { ok: false, message: "Нет прав" };
+        set((s) => {
+          result = setGuildJoinMode(s.guild, mode);
+        });
+        return result;
+      },
+      claimGuildQuest: (defId) => {
+        let result = { ok: false, message: "Нет задания" };
+        set((s) => {
+          result = claimQuestReward(s.guild, defId);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      strikeGuildBoss: () => {
+        let result = { ok: false, message: "Нет босса" };
+        set((s) => {
+          const r = strikeGuildBoss(s.guild, statsOf(s).powerScore);
+          result = { ok: r.ok, message: r.message };
+          if (r.ok) pushLog(s, r.killed ? "boss" : "system", r.message);
+        });
+        return result;
+      },
+      buyGuildItem: (itemId) => {
+        let result = { ok: false, message: "Не купить" };
+        set((s) => {
+          result = buyGuildShopItem(s, itemId);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      rankGuildSkill: (skillId) => {
+        let result = { ok: false, message: "Нельзя" };
+        set((s) => {
+          result = rankGuildSkill(s.guild, skillId);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      activateGuildBuff: (buffId) => {
+        let result = { ok: false, message: "Нельзя" };
+        set((s) => {
+          result = activateGuildBuff(s.guild, buffId);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
       resetSave: () =>
         set(() => ({
           ...createInitialState(),
@@ -1189,9 +1343,13 @@ export const useGameStore = create<GameStore>()(
       name: PROFILE_PERSIST_NAME,
       storage: createJSONStorage(() => createAccountStorage(PROFILE_PERSIST_NAME)),
       skipHydration: true,
-      version: 5,
+      version: 6,
       migrate: (persisted, version) => {
         const p = persisted as GameData;
+        if (version < 6) {
+          p.worldHunters = [];
+          if (p.meta) p.meta.hunterAcc = 0;
+        }
         if (version < 5) {
           if (!p.dungeon) {
             p.dungeon = { active: null, dailyUsed: {} };
@@ -1245,6 +1403,7 @@ export const useGameStore = create<GameStore>()(
         farm: s.farm,
         talents: s.talents,
         sinBuild: s.sinBuild,
+        worldHunters: s.worldHunters,
         leaderboard: s.leaderboard,
         settings: s.settings,
         meta: s.meta,
@@ -1288,6 +1447,7 @@ export const useGameStore = create<GameStore>()(
             artRanks: { ...(p.sinBuild?.artRanks ?? {}) },
             mastery: p.sinBuild?.mastery ?? 0,
           },
+          guild: normalizeGuild(p.guild ?? current.guild),
           farm,
           settings: {
             ...current.settings,
@@ -1303,6 +1463,7 @@ export const useGameStore = create<GameStore>()(
           gems: p.gems ?? [],
           inventory: normalizeInventory(p.inventory) ?? current.inventory,
           dungeon: p.dungeon ?? emptyDungeonState(),
+          worldHunters: p.worldHunters ?? current.worldHunters,
         };
         tagSaveItems(merged);
         if (merged.character.classId === "assassin") {

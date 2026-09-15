@@ -52,6 +52,7 @@ import {
   isDungeonLocationId,
   recommendedSafeLocationAfterDungeon,
 } from "./dungeons";
+import { ensureHunters, simulateHunters } from "./hunters";
 import { ensureFarmState, FARM_SPOT_BY_ID, occupySpot, vacatePlayerSpots } from "./spots";
 import {
   afterSinSwing,
@@ -67,6 +68,7 @@ import {
   tickSinEffects,
   tryCastSin,
 } from "./sin";
+import { guildCombatBonuses, noteGuildKills, noteGuildOre, tickGuild, normalizeGuild } from "./guild";
 import { isSkillUnlocked } from "./talents";
 import {
   RARITIES,
@@ -226,6 +228,24 @@ export function ensureWorld(state: Draft) {
   void DUNGEON_HALL_BY_ID;
   if (!state.dungeon) state.dungeon = emptyDungeonState();
   if (!state.dungeon.dailyUsed) state.dungeon.dailyUsed = {};
+  state.guild = normalizeGuild(state.guild);
+  if (!state.mines) state.mines = {};
+  for (const mine of MINES) {
+    if (!state.mines[mine.id]) {
+      const occupants = [];
+      const filled = Math.max(1, mine.slots - 1);
+      for (let i = 0; i < filled; i++) {
+        occupants.push({
+          id: `mine-${mine.id}-${i}`,
+          name: `Охотник ${i + 1}`,
+          guild: "—",
+          power: Math.round(expectedBm(mine.bmLevel ?? mine.minLevel) * (0.88 + i * 0.06)),
+          isPlayer: false,
+        });
+      }
+      state.mines[mine.id] = { occupants };
+    }
+  }
   state.farm = ensureFarmState(state.farm);
   if (!state.gems) state.gems = [];
   if (state.resources.blessing == null) state.resources.blessing = 0;
@@ -245,6 +265,7 @@ export function ensureWorld(state: Draft) {
   }
   unlockLocationsByLevel(state, false);
   tickDungeonSession(state);
+  ensureHunters(state);
 }
 
 function tryPlaceLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: LootKind) {
@@ -414,12 +435,13 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
       (spot?.xpMult ?? 1) *
       xpLevelGapMult(state.character.level, monster.level),
   );
-  const goldMult = spot?.goldMult ?? 1;
+  const goldMult = (spot?.goldMult ?? 1) * (1 + guildCombatBonuses(state.guild).goldMult);
   const gold = Math.round(monster.gold * goldMult);
   const shards = Math.round(monster.shards * goldMult);
   state.resources.gold += gold;
   state.resources.shards += shards;
   gainXp(state, xp);
+  noteGuildKills(state.guild, 1);
 
   let oreNote = "";
   if (hall) {
@@ -713,6 +735,7 @@ export function applyOffline(state: Draft, now = Date.now()) {
     };
   }
   ensureWorld(state);
+  tickGuild(state, now);
   if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
   if (!state.combat.mode) state.combat.mode = "pve";
   if (state.combat.wardHits == null) state.combat.wardHits = 0;
@@ -729,6 +752,10 @@ export function applyOffline(state: Draft, now = Date.now()) {
     if (isAutoSellEnabled(state, rarity)) flushAutoSellInventory(state, rarity);
   }
   syncCombatEffects(state);
+  if (elapsed > 0) {
+    const freshStart = state.character.level <= 1 && state.character.xp === 0 && elapsed > 30;
+    if (!freshStart) simulateHunters(state, elapsed, now);
+  }
   if (elapsed < 8) {
     state.meta.pendingOffline = null;
     return;
@@ -756,6 +783,8 @@ export function tickGame(state: Draft, dt: number) {
     };
   }
   ensureWorld(state);
+  tickGuild(state, now);
+  simulateHunters(state, dt, now);
   if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
   if (state.combat.lootlessKills == null) state.combat.lootlessKills = 0;
   if (!state.combat.playerEffects) state.combat.playerEffects = [];
@@ -796,6 +825,7 @@ export function tickGame(state: Draft, dt: number) {
       const add = Math.floor(state.oreAcc);
       state.resources.ore += add;
       state.oreAcc -= add;
+      noteGuildOre(state.guild, add);
     }
   }
 

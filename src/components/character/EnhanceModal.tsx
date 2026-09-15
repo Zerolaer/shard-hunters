@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Hammer, ShieldCheck, Sparkles, X, Zap } from "lucide-react";
-import { INVENTORY_COLS, MAX_ENHANCE, RARITY_COLOR } from "@/lib/game/constants";
+import { MAX_ENHANCE, RARITY_COLOR } from "@/lib/game/constants";
 import {
   enhanceCost,
   enhancePlanCost,
@@ -68,12 +68,11 @@ function costButtonLabel(plan: { gold: number; ore: number; shards: number }) {
   return parts.join(" · ");
 }
 
-function previewIconSize(count: number) {
-  if (count <= 1) return { box: "h-20 w-20", glyph: "h-14 w-14", radius: "rounded-2xl" };
-  if (count <= 4) return { box: "h-14 w-14", glyph: "h-10 w-10", radius: "rounded-xl" };
-  if (count <= 9) return { box: "h-11 w-11", glyph: "h-8 w-8", radius: "rounded-lg" };
-  return { box: "h-9 w-9", glyph: "h-7 w-7", radius: "rounded-md" };
-}
+/** Compact selected-row glyph — list count must not resize the modal. */
+const PREVIEW_BOX = "h-10 w-10";
+const PREVIEW_GLYPH = "h-8 w-8";
+const PREVIEW_RADIUS = "rounded-lg";
+const PICKER_COLS = 5;
 
 export function EnhanceModal() {
   const open = useUiStore((s) => s.enhanceModalOpen);
@@ -163,7 +162,7 @@ export function EnhanceModal() {
     : workItems[0] ?? selectedItems[0] ?? null;
   const focusChance = focusItem ? enhanceSuccessChance(focusItem.enhanceLevel) : 0;
   const focusSafe = focusItem ? isEnhanceSafe(focusItem.enhanceLevel) : true;
-  const previewSizes = previewIconSize(selectedItems.length || 1);
+  const showFocusMeta = !!(focusItem && focusItem.enhanceLevel < targetLevel);
 
   useEffect(() => {
     setMounted(true);
@@ -332,9 +331,9 @@ export function EnhanceModal() {
         aria-modal="true"
         aria-labelledby={titleId}
         data-enhance-modal
-        className="es-modal relative z-10 flex max-h-[min(92vh,36rem)] w-full max-w-md flex-col overflow-hidden"
+        className="es-modal relative z-10 flex h-[min(90vh,36rem)] w-full max-w-3xl flex-col overflow-hidden"
       >
-        <div className="flex items-start gap-3 border-b border-white/10 px-4 py-3.5">
+        <div className="flex shrink-0 items-start gap-3 border-b border-white/10 px-4 py-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#c4b5fd]/25 bg-[#c4b5fd]/10">
             <Hammer className="h-5 w-5 text-[#c4b5fd]" />
           </div>
@@ -343,7 +342,7 @@ export function EnhanceModal() {
               Заточка
             </p>
             <p className="mt-0.5 text-xs text-[#8aa0b4]">
-              Тап по ячейкам — выбор. Куём до цели; предметы уже на марке и выше пропускаются.
+              Слева — выбор. Справа — выбранные и цель. Куём до марки; уже на ней пропускаются.
             </p>
           </div>
           <button
@@ -356,16 +355,20 @@ export function EnhanceModal() {
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
-          <section>
-            <div className="es-label mb-1.5 flex items-center justify-between gap-2">
+        <div className="es-enhance-split">
+          <section className="es-enhance-col border-r border-white/10 px-3 py-3">
+            <div className="es-label mb-1.5 flex min-h-[1rem] shrink-0 items-center justify-between gap-2">
               <span>Предметы</span>
-              {selectedIds.length > 0 && (
-                <span className="tabular-nums text-[10px] font-normal normal-case tracking-normal text-[#8aa0b4]">
-                  выбрано {selectedIds.length}
-                  {skippedCount > 0 ? ` · к цели ${workItems.length}` : ""}
-                </span>
-              )}
+              <span
+                className={cn(
+                  "tabular-nums text-[10px] font-normal normal-case tracking-normal text-[#8aa0b4]",
+                  selectedIds.length === 0 && "invisible",
+                )}
+                aria-hidden={selectedIds.length === 0}
+              >
+                выбрано {selectedIds.length || 0}
+                {skippedCount > 0 ? ` · к цели ${workItems.length}` : ""}
+              </span>
             </div>
             {candidates.length === 0 ? (
               <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-4 text-center text-xs text-[#8aa0b4]">
@@ -373,8 +376,8 @@ export function EnhanceModal() {
               </p>
             ) : (
               <div
-                className="es-inv-grid max-h-[9.5rem] overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-1.5"
-                style={{ gridTemplateColumns: `repeat(${INVENTORY_COLS}, minmax(0, 1fr))` }}
+                className="es-inv-grid es-enhance-col-list rounded-xl border border-white/8 bg-black/20 p-1.5 content-start"
+                style={{ gridTemplateColumns: `repeat(${PICKER_COLS}, minmax(0, 1fr))` }}
               >
                 {candidates.map((it) => {
                   const on = selectedIds.includes(it.id);
@@ -392,24 +395,41 @@ export function EnhanceModal() {
                       aria-pressed={on}
                       aria-label={`${it.name} +${it.enhanceLevel}${worn ? ", надето" : ""}`}
                       className={cn(
-                        "es-slot es-inv-cell relative flex aspect-square w-full items-center justify-center overflow-visible",
+                        "es-slot es-inv-cell relative flex aspect-square w-full items-center justify-center overflow-hidden",
                         on && "is-bulk",
                         atOrAbove && "opacity-70",
                         running && !active && "opacity-55",
-                        quickEnhance && cellFx !== "idle" && "is-quick",
-                        cellFx === "charge" && "enhance-charge",
-                        cellFx === "success" && "enhance-success",
-                        cellFx === "fail" && "enhance-fail",
                       )}
                       style={{
                         boxShadow: `inset 0 2px 6px rgba(0,0,0,0.55), inset 0 0 0 1.5px ${RARITY_COLOR[it.rarity]}`,
                       }}
                     >
                       <div className="absolute inset-[3px] overflow-hidden rounded-[4px]">
-                        <ItemGlyph item={it} compact />
+                        <div
+                          key={cellFx !== "idle" ? `cell-fx-${it.id}-${fxNonce}` : undefined}
+                          className={cn(
+                            "flex h-full w-full items-center justify-center",
+                            quickEnhance && cellFx !== "idle" && "is-quick",
+                            cellFx === "charge" && "enhance-charge",
+                            cellFx === "success" && "enhance-success",
+                            cellFx === "fail" && "enhance-fail",
+                          )}
+                        >
+                          <ItemGlyph item={it} compact />
+                        </div>
+                        {cellFx === "success" && (
+                          <span
+                            key={`ok-${fxNonce}`}
+                            className={cn(
+                              "es-enhance-burst pointer-events-none absolute inset-0",
+                              quickEnhance && "is-quick",
+                            )}
+                            aria-hidden
+                          />
+                        )}
                       </div>
                       {on && (
-                        <span className="absolute left-0.5 top-0.5 z-[1] flex h-3 w-3 items-center justify-center rounded-full bg-white text-[8px] font-bold text-black">
+                        <span className="absolute right-0.5 top-0.5 z-[1] flex h-3 w-3 items-center justify-center rounded-full bg-white text-[8px] font-bold text-black">
                           ✓
                         </span>
                       )}
@@ -421,16 +441,6 @@ export function EnhanceModal() {
                           Е
                         </span>
                       )}
-                      {cellFx === "success" && (
-                        <span
-                          key={`ok-${fxNonce}`}
-                          className={cn(
-                            "es-enhance-burst pointer-events-none absolute inset-0",
-                            quickEnhance && "is-quick",
-                          )}
-                          aria-hidden
-                        />
-                      )}
                     </button>
                   );
                 })}
@@ -438,152 +448,138 @@ export function EnhanceModal() {
             )}
           </section>
 
-          <section>
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <div className="es-label mb-0 flex items-center gap-1.5">
-                Цель
-                <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
-                  +{targetLevel}
-                </span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={quickEnhance}
-                disabled={running}
-                onClick={() => setQuickEnhance((v) => !v)}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold tracking-wide transition-colors",
-                  quickEnhance
-                    ? "border-amber-400/45 bg-amber-400/15 text-amber-200"
-                    : "border-white/10 bg-black/30 text-[#8aa0b4]",
-                  running && "opacity-60",
-                )}
-                title="Быстрая заточка — ускоренные анимации"
-              >
-                <Zap className="h-3 w-3" />
-                Быстро
-              </button>
-            </div>
-            <div className="es-enh-grid">
-              {Array.from({ length: MAX_ENHANCE }, (_, i) => {
-                const level = i + 1;
-                // Allow any mark above the lowest piece; higher-than-target items are simply skipped.
-                const disabled = running || level <= minCurrent;
-                return (
-                  <button
-                    key={level}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setTargetLevel(level)}
-                    className={cn(
-                      "es-enh-chip",
-                      level === targetLevel && "is-preview",
-                      selectedItems.length === 1 &&
-                        selectedItems[0].enhanceLevel === level &&
-                        "is-actual",
-                    )}
-                    aria-label={`Цель +${level}`}
-                  >
-                    {level}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           <section
             className={cn(
-              "es-enhance-stage relative overflow-hidden rounded-2xl border border-white/10 bg-black/40 px-4 py-4",
+              "es-enhance-col es-enhance-stage relative px-3 py-3",
               fx === "success" && "is-success",
               fx === "fail" && "is-fail",
               fx === "charge" && "is-charge",
               quickEnhance && "is-quick",
             )}
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_30%,rgba(196,181,253,0.14),transparent_62%)]" />
-            <div className="relative flex flex-col items-center gap-2.5">
-              {selectedItems.length === 0 ? (
-                <div
-                  className={cn(
-                    "es-enhance-anvil relative flex items-center justify-center border border-white/12 bg-black/55",
-                    previewSizes.box,
-                    previewSizes.radius,
-                  )}
-                >
-                  <Sparkles className="h-7 w-7 text-white/25" />
-                </div>
-              ) : (
-                <div
-                  className={cn(
-                    "flex flex-wrap items-center justify-center gap-1.5",
-                    selectedItems.length > 6 && "max-w-[16rem]",
-                  )}
-                >
-                  {selectedItems.map((it) => {
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_18%,rgba(196,181,253,0.12),transparent_58%)]" />
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="es-label mb-1.5 flex shrink-0 items-center justify-between gap-2">
+                <span>Выбрано</span>
+                <span className="tabular-nums text-[10px] font-normal normal-case tracking-normal text-[#8aa0b4]">
+                  {selectedItems.length === 0
+                    ? "пусто"
+                    : workItems.length === 0
+                      ? `все ≥ +${targetLevel}`
+                      : `${workItems.length} к цели`}
+                </span>
+              </div>
+
+              <div className="es-enhance-col-list space-y-1.5 rounded-xl border border-white/8 bg-black/20 p-1.5">
+                {selectedItems.length === 0 ? (
+                  <div className="flex min-h-[7.5rem] flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-6 text-center">
+                    <div
+                      className={cn(
+                        "es-enhance-anvil flex items-center justify-center border border-white/12 bg-black/55",
+                        PREVIEW_BOX,
+                        PREVIEW_RADIUS,
+                      )}
+                    >
+                      <Sparkles className="h-5 w-5 text-white/25" />
+                    </div>
+                    <p className="text-xs text-[#8aa0b4]">Выберите предмет слева</p>
+                  </div>
+                ) : (
+                  selectedItems.map((it) => {
                     const active = activeId === it.id;
                     const done = it.enhanceLevel >= targetLevel;
+                    const worn = equippedIds.has(it.id);
                     const showFx =
                       active && (fx === "success" || fx === "fail" || fx === "charge");
+                    const shownLevel =
+                      active && fxLevel != null ? fxLevel : it.enhanceLevel;
                     return (
-                      <div
+                      <button
                         key={it.id}
+                        type="button"
+                        disabled={running}
+                        onClick={() => toggleItem(it.id)}
+                        title={`${it.name} +${it.enhanceLevel} — нажмите, чтобы убрать`}
                         className={cn(
-                          "es-enhance-anvil relative flex items-center justify-center border border-white/12 bg-black/55",
-                          previewSizes.box,
-                          previewSizes.radius,
+                          "flex w-full items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-2 py-1.5 text-left transition-colors",
                           done && !active && "opacity-55",
-                          active && "ring-1 ring-amber-300/50",
-                          quickEnhance && showFx && "is-quick",
-                          showFx && fx === "success" && "enhance-success",
-                          showFx && fx === "fail" && "enhance-fail",
-                          showFx && fx === "charge" && "enhance-charge",
+                          active && "border-amber-300/40 ring-1 ring-amber-300/35",
+                          !running && "hover:border-white/20 hover:bg-black/50",
                         )}
-                        title={`${it.name} +${it.enhanceLevel}`}
                       >
-                        <div className={cn("overflow-hidden", previewSizes.glyph, previewSizes.radius)}>
-                          <ItemGlyph item={it} compact />
-                        </div>
-                        {showFx && fx === "success" && (
-                          <span
-                            key={`burst-${it.id}-${fxNonce}`}
+                        <div
+                          className={cn(
+                            "es-enhance-anvil flex items-center justify-center border border-white/12 bg-black/55",
+                            PREVIEW_BOX,
+                            PREVIEW_RADIUS,
+                          )}
+                        >
+                          <div
+                            key={showFx ? `anvil-fx-${it.id}-${fxNonce}` : undefined}
                             className={cn(
-                              "es-enhance-burst pointer-events-none absolute inset-0",
-                              quickEnhance && "is-quick",
+                              "relative z-[1] flex items-center justify-center overflow-hidden",
+                              PREVIEW_GLYPH,
+                              PREVIEW_RADIUS,
+                              quickEnhance && showFx && "is-quick",
+                              showFx && fx === "success" && "enhance-success",
+                              showFx && fx === "fail" && "enhance-fail",
+                              showFx && fx === "charge" && "enhance-charge",
                             )}
-                            aria-hidden
-                          />
-                        )}
-                        <span className="absolute -bottom-1 left-1/2 z-[1] -translate-x-1/2 rounded bg-black/80 px-1 text-[8px] font-semibold tabular-nums text-amber-200/90">
-                          +{active && fxLevel != null ? fxLevel : it.enhanceLevel}
-                        </span>
-                      </div>
+                          >
+                            <ItemGlyph item={it} compact />
+                          </div>
+                          {showFx && fx === "charge" && (
+                            <span
+                              className={cn(
+                                "es-enhance-fx enhance-charge pointer-events-none",
+                                quickEnhance && "is-quick",
+                              )}
+                              aria-hidden
+                            />
+                          )}
+                          {showFx && fx === "success" && (
+                            <span
+                              key={`burst-${it.id}-${fxNonce}`}
+                              className={cn(
+                                "es-enhance-burst pointer-events-none absolute inset-0 z-[2]",
+                                quickEnhance && "is-quick",
+                              )}
+                              aria-hidden
+                            />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-white">{it.name}</p>
+                          <p className="mt-0.5 text-[10px] tabular-nums text-amber-200/90">
+                            {done
+                              ? `+${shownLevel} · уже на цели`
+                              : `+${shownLevel} → +${targetLevel}`}
+                            {worn ? " · надето" : ""}
+                          </p>
+                        </div>
+                      </button>
                     );
-                  })}
-                </div>
-              )}
-              <div className="text-center">
-                <p className="text-sm font-medium text-white">
-                  {selectedItems.length === 0
-                    ? "Выберите предмет"
-                    : selectedItems.length === 1
-                      ? selectedItems[0].name
-                      : `${selectedItems.length} предметов → +${targetLevel}`}
-                </p>
-                <p className="mt-1 text-xs tabular-nums text-amber-200/90">
-                  {selectedItems.length === 0
-                    ? `цель +${targetLevel}`
-                    : workItems.length === 0
-                      ? `все уже ≥ +${targetLevel}`
-                      : selectedItems.length === 1
-                        ? fxLevel != null && activeId === selectedItems[0].id
-                          ? `+${fxLevel}`
-                          : `+${selectedItems[0].enhanceLevel} → +${targetLevel}`
-                        : `куём ${workItems.length} · цель +${targetLevel}`}
-                </p>
-                {focusItem && focusItem.enhanceLevel < targetLevel && (
-                  <p className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] text-[#8aa0b4]">
-                    <span className="font-mono text-white/75">{(focusChance * 100).toFixed(0)}%</span>
+                  })
+                )}
+              </div>
+
+              <div className="mt-2 shrink-0 space-y-2 border-t border-white/10 pt-2">
+                <div className="min-h-[1.25rem]">
+                  {selectedItems.length > 1 ? (
+                    <p className="truncate text-xs font-medium text-white">
+                      {selectedItems.length} предметов → +{targetLevel}
+                    </p>
+                  ) : null}
+                  <p
+                    className={cn(
+                      "flex min-h-[1.25rem] flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-[#8aa0b4]",
+                      !showFocusMeta && selectedItems.length <= 1 && "invisible",
+                    )}
+                    aria-hidden={!showFocusMeta}
+                  >
+                    <span className="font-mono text-white/75">
+                      {(focusChance * 100).toFixed(0)}%
+                    </span>
                     <span
                       className={cn(
                         "inline-flex items-center gap-1",
@@ -593,35 +589,80 @@ export function EnhanceModal() {
                       <ShieldCheck className="h-3 w-3" />
                       {focusSafe
                         ? "безопасный уровень"
-                        : `откат до +${enhanceSafeFloor(focusItem.enhanceLevel)}`}
+                        : `откат до +${focusItem ? enhanceSafeFloor(focusItem.enhanceLevel) : 0}`}
                     </span>
                   </p>
-                )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="es-label mb-0 flex items-center gap-1.5">
+                    Цель
+                    <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                      +{targetLevel}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={quickEnhance}
+                    disabled={running}
+                    onClick={() => setQuickEnhance((v) => !v)}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold tracking-wide transition-colors",
+                      quickEnhance
+                        ? "border-amber-400/45 bg-amber-400/15 text-amber-200"
+                        : "border-white/10 bg-black/30 text-[#8aa0b4]",
+                      running && "opacity-60",
+                    )}
+                    title="Быстрая заточка — ускоренные анимации"
+                  >
+                    <Zap className="h-3 w-3" />
+                    Быстро
+                  </button>
+                </div>
+                <div className="es-enh-grid">
+                  {Array.from({ length: MAX_ENHANCE }, (_, i) => {
+                    const level = i + 1;
+                    const disabled = running || level <= minCurrent;
+                    return (
+                      <button
+                        key={level}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setTargetLevel(level)}
+                        className={cn(
+                          "es-enh-chip",
+                          level === targetLevel && "is-preview",
+                          selectedItems.length === 1 &&
+                            selectedItems[0].enhanceLevel === level &&
+                            "is-actual",
+                        )}
+                        aria-label={`Цель +${level}`}
+                      >
+                        {level}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </section>
         </div>
 
-        <div className="flex flex-wrap items-stretch gap-2 border-t border-white/10 px-4 py-3">
-          {running ? (
-            <button
-              type="button"
-              onClick={() => {
-                cancelRef.current = true;
-              }}
-              className="es-btn es-inv-control h-auto min-h-9 flex-1 justify-center px-3 py-2"
-            >
-              Остановить
-            </button>
-          ) : (
+        <div className="flex shrink-0 items-stretch gap-2 border-t border-white/10 px-4 py-3">
+          <div className="relative min-h-11 min-w-0 flex-1">
             <button
               type="button"
               onClick={() => void runBatch()}
-              disabled={enhanceDisabled}
-              className="es-btn es-btn-cyan es-inv-control h-auto min-h-9 flex-1 justify-center gap-1.5 px-3 py-2 text-center leading-tight"
+              disabled={enhanceDisabled || running}
+              className={cn(
+                "es-btn es-btn-cyan absolute inset-0 justify-center gap-1.5 px-3 text-center leading-tight",
+                running && "pointer-events-none invisible",
+              )}
+              tabIndex={running ? -1 : 0}
             >
               <Hammer className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0">
+              <span className="min-w-0 truncate">
                 {plan.attempts > 0
                   ? costButtonLabel(plan)
                   : selectedItems.length === 0
@@ -629,11 +670,24 @@ export function EnhanceModal() {
                     : "Уже на цели"}
               </span>
             </button>
-          )}
+            <button
+              type="button"
+              onClick={() => {
+                cancelRef.current = true;
+              }}
+              className={cn(
+                "es-btn absolute inset-0 justify-center px-3",
+                !running && "pointer-events-none invisible",
+              )}
+              tabIndex={running ? 0 : -1}
+            >
+              Остановить
+            </button>
+          </div>
           <button
             type="button"
             onClick={requestClose}
-            className="es-btn es-inv-control h-auto min-h-9 px-3 py-2"
+            className="es-btn h-11 shrink-0 px-3"
           >
             Закрыть
           </button>

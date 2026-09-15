@@ -601,13 +601,10 @@ export function unlockedSinArts(ranks: Record<string, number>): SinArtId[] {
 
 export function hasSinKeystone(
   ranks: Record<string, number>,
-  path: SinPathId | null,
+  _path: SinPathId | null,
   keystone: SinKeystoneId,
 ) {
-  if (!path) return false;
-  return SIN_NODES.some(
-    (n) => n.keystone === keystone && n.path === path && (ranks[n.id] ?? 0) > 0,
-  );
+  return SIN_NODES.some((n) => n.keystone === keystone && (ranks[n.id] ?? 0) > 0);
 }
 
 export function canAllocateSinNode(

@@ -25,6 +25,13 @@ export interface SinPresetDef {
   path: SinPathId;
   name: string;
   description: string;
+  /**
+   * Extra nodes from other paths (sockets / capstones / roots).
+   * Presets can dip into a second branch — the tree allows it.
+   */
+  offPathOrder?: string[];
+  /** Extra paths this guide spends into, besides `path`. */
+  hybrid?: SinPathId[];
   /** Preferred tree spend order (node ids). Applied until points run out. */
   nodeOrder: string[];
   /** Recommended hotbar (slot order). Equipped when unlocked. */
@@ -281,12 +288,67 @@ export const SIN_PRESETS: SinPresetDef[] = [
     artRankPriority: ["art-echo", "art-crit", "art-haste", "art-fortify"],
     gemStatPriority: ["agility", "attack", "critChance", "critDamage", "accuracy"],
   },
+  {
+    id: "sin-hybrid-plagueblade",
+    path: "blade",
+    hybrid: ["venom"],
+    name: "Чумной клинок",
+    description:
+      "Клинок + ветка яда: сокет «Яд в ране» с Чаши. Несколько деревьев сразу.",
+    nodeOrder: coreOrder("blade", [
+      "blade-backstab",
+      "blade-mark",
+      "blade-eviscerate",
+      "blade-execute",
+      "blade-precision",
+      "blade-art-crit",
+      "blade-keystone",
+    ]),
+    offPathOrder: ["venom-toxin", "venom-sap", "venom-art-poison", "venom-art-duration"],
+    hotbar: ["sin-venom", "sin-mark", "sin-eviscerate", "sin-execute"],
+    arts: {
+      "sin-venom": "art-poison",
+      "sin-eviscerate": "art-economy",
+      "sin-execute": "art-execute",
+      "sin-backstab": "art-crit",
+    },
+    skillRankPriority: ["sin-eviscerate", "sin-venom", "sin-execute", "sin-mark", "sin-backstab"],
+    artRankPriority: ["art-poison", "art-crit", "art-execute", "art-duration"],
+    gemStatPriority: ["agility", "attack", "critChance", "critDamage", "accuracy"],
+  },
+  {
+    id: "sin-hybrid-nightcup",
+    path: "phantom",
+    hybrid: ["venom"],
+    name: "Ночная чаша",
+    description:
+      "Призрак + яд: засада из стелса и сокет длительности с Чаши Яда.",
+    nodeOrder: coreOrder("phantom", [
+      "phantom-vanish",
+      "phantom-step",
+      "phantom-ambush",
+      "phantom-backstab",
+      "phantom-art-haste",
+      "phantom-keystone",
+    ]),
+    offPathOrder: ["venom-toxin", "venom-sap", "venom-art-poison", "venom-art-duration"],
+    hotbar: ["sin-vanish", "sin-ambush", "sin-venom", "sin-backstab"],
+    arts: {
+      "sin-ambush": "art-echo",
+      "sin-venom": "art-poison",
+      "sin-vanish": "art-haste",
+      "sin-backstab": "art-duration",
+    },
+    skillRankPriority: ["sin-ambush", "sin-venom", "sin-vanish", "sin-backstab", "sin-nightblade"],
+    artRankPriority: ["art-poison", "art-haste", "art-duration", "art-echo"],
+    gemStatPriority: ["critChance", "agility", "attack", "accuracy", "critDamage"],
+  },
 ];
 
 /** Tree nodes only (path unlocks). */
 export function sinPresetTreePoints(preset: SinPresetDef): number {
   let n = 0;
-  for (const id of preset.nodeOrder) {
+  for (const id of [...preset.nodeOrder, ...(preset.offPathOrder ?? [])]) {
     const node = SIN_NODE_BY_ID[id];
     if (node) n += node.maxRank;
   }
@@ -311,6 +373,17 @@ export function sinPresetPointsRequired(preset: SinPresetDef): number {
   return sinPresetGuideCost(preset);
 }
 
+function presetNodeOrder(preset: SinPresetDef) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of [...preset.nodeOrder, ...(preset.offPathOrder ?? [])]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 function allocateTree(
   preset: SinPresetDef,
   availablePoints: number,
@@ -333,9 +406,9 @@ function allocateTree(
   let progressed = true;
   while (points > 0 && progressed) {
     progressed = false;
-    for (const id of preset.nodeOrder) {
+    for (const id of presetNodeOrder(preset)) {
       const node = SIN_NODE_BY_ID[id];
-      if (!node || node.path !== preset.path) continue;
+      if (!node) continue;
       while ((ranks[id] ?? 0) < node.maxRank) {
         if (!canAllocateSinNode(ranks, id, points, preset.path)) break;
         ranks[id] = (ranks[id] ?? 0) + 1;
@@ -610,9 +683,9 @@ export function remainingSinPresetFills(
   let treeProgress = true;
   while (points > 0 && treeProgress) {
     treeProgress = false;
-    for (const id of preset.nodeOrder) {
+    for (const id of presetNodeOrder(preset)) {
       const node = SIN_NODE_BY_ID[id];
-      if (!node || node.path !== preset.path) continue;
+      if (!node) continue;
       while ((ranks[id] ?? 0) < node.maxRank && points > 0) {
         if (!canAllocateSinNode(ranks, id, points, preset.path)) break;
         ranks[id] = (ranks[id] ?? 0) + 1;

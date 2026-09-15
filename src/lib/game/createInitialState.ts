@@ -1,4 +1,4 @@
-import { expectedBm, mineOccupantBm } from "./balance";
+import { mineOccupantBm } from "./balance";
 import {
   defaultAutoSell,
   emptyEquipment,
@@ -12,9 +12,11 @@ import {
 import { statsOf, irand, pick, uid } from "./formulas";
 import { generateItem, generateMonster, emptyLocationProgress } from "./generators";
 import { createFarmState, DEFAULT_SPOT_ID, FARM_SPOT_BY_ID, occupySpot } from "./spots";
+import { emptyGuildState } from "./guild";
 import { emptySinBuild, emptySinCombat } from "./sin/state";
 import { DEFAULT_AVATAR_ID } from "./avatars";
 import "./dungeons";
+import { createWorldHunters, HUNTER_ROSTER_GEN } from "./hunters";
 import type { GameData, SkillId } from "./types";
 
 export function createInitialState(opts?: { name?: string }): GameData {
@@ -32,14 +34,6 @@ export function createInitialState(opts?: { name?: string }): GameData {
 
   const locations = Object.fromEntries(LOCATIONS.map((l) => [l.id, emptyLocationProgress()]));
 
-  const members = [
-    { id: "player", name: hunterName, contribution: 0, isPlayer: true },
-    { id: uid(), name: "Ринн Ветер", contribution: 420, isPlayer: false },
-    { id: uid(), name: "Бор Камень", contribution: 880, isPlayer: false },
-    { id: uid(), name: "Несса Тень", contribution: 610, isPlayer: false },
-    { id: uid(), name: "Илко Искра", contribution: 240, isPlayer: false },
-  ];
-
   const mines: GameData["mines"] = {};
   for (const mine of MINES) {
     const occupants = [];
@@ -49,19 +43,19 @@ export function createInitialState(opts?: { name?: string }): GameData {
         id: uid(),
         name: pick(NPC_HUNTERS),
         guild: pick(NPC_GUILDS),
-        power: mineOccupantBm(mine.minLevel, i, mine.slots) + irand(-12, 18),
+        power: mineOccupantBm(mine.bmLevel ?? mine.minLevel, i, mine.slots) + irand(-12, 18),
         isPlayer: false,
       });
     }
     mines[mine.id] = { occupants };
   }
 
-  const leaderboard = NPC_HUNTERS.slice(0, 12).map((name, i) => ({
-    id: uid(),
-    name,
-    guild: pick(NPC_GUILDS),
-    power: expectedBm(10 + i * 8) + irand(-30, 50),
-  }));
+  const worldHunters = createWorldHunters();
+  const leaderboard = worldHunters
+    .slice()
+    .sort((a, b) => b.power - a.power)
+    .slice(0, 12)
+    .map((h) => ({ id: h.id, name: h.name, guild: h.guild, power: h.power }));
 
   const farm = createFarmState();
   const startSpot = FARM_SPOT_BY_ID[DEFAULT_SPOT_ID];
@@ -120,15 +114,7 @@ export function createInitialState(opts?: { name?: string }): GameData {
       locations,
     },
     resources: { gold: 80, shards: 6, ore: 12, blessing: 0 },
-    guild: {
-      id: "ashen-dawn",
-      name: "Пепельный Рассвет",
-      level: 1,
-      xp: 0,
-      treasuryGold: 2400,
-      treasuryOre: 180,
-      members,
-    },
+    guild: emptyGuildState(),
     mines,
     farm,
     talents: {
@@ -136,13 +122,14 @@ export function createInitialState(opts?: { name?: string }): GameData {
       ranks: {},
     },
     sinBuild: emptySinBuild(),
+    worldHunters,
     leaderboard,
     settings: {
       autoBattle: false,
       autoSellEnabled: true,
       autoSell: defaultAutoSell(),
     },
-    meta: { lastTick: Date.now(), pendingOffline: null },
+    meta: { lastTick: Date.now(), pendingOffline: null, hunterAcc: 0, hunterRoster: HUNTER_ROSTER_GEN },
     oreAcc: 0,
     dungeon: { active: null, dailyUsed: {} },
   };
@@ -152,7 +139,7 @@ export function createInitialState(opts?: { name?: string }): GameData {
   occupySpot(state.farm, DEFAULT_SPOT_ID, {
     id: "player",
     name: hunterName,
-    guild: state.guild.name,
+    guild: state.guild.name || "—",
     power: derived.powerScore,
     isPlayer: true,
   });
