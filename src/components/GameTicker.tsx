@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { flushCloudSave } from "@/lib/auth/accounts";
 import { useGameStore } from "@/store/useGameStore";
 
 /** Longest single tick the combat loop will resolve; beyond this it is offline time. */
@@ -57,6 +58,7 @@ export function GameTicker({
   useEffect(() => {
     if (!ticking) return;
     useGameStore.getState().applyOfflineProgress();
+    flushCloudSave();
     let last = performance.now();
     const step = () => {
       const t = performance.now();
@@ -79,6 +81,7 @@ export function GameTicker({
       // replaying it or throwing it away.
       if (document.visibilityState === "visible") {
         useGameStore.getState().applyOfflineProgress();
+        flushCloudSave();
       }
       last = performance.now();
     };

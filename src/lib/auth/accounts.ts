@@ -1,5 +1,10 @@
 import { SAVE_FETCH_MS, fetchWithTimeout } from "./http";
-import { isUsableSavePayload, serializeSaveForStorage } from "./saveFormat";
+import {
+  isSaveProgressAhead,
+  isUsableSavePayload,
+  pickNewerSaveRaw,
+  serializeSaveForStorage,
+} from "./saveFormat";
 
 export const PROFILE_PERSIST_NAME = "shard-hunters-save-v2";
 export const SESSION_META_KEY = "shard-hunters-session-meta";
@@ -87,6 +92,32 @@ export function writeLocalSaveCache(accountId: string, persistName: string, raw:
   localStorage.setItem(key, raw);
 }
 
+export function clearSaveBackup(accountId: string, persistName: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(backupSaveKey(persistName, accountId));
+}
+
+function readLocalSaveCandidates(accountId: string, persistName: string) {
+  if (typeof window === "undefined") return { primary: null as string | null, backup: null as string | null };
+  return {
+    primary: localStorage.getItem(scopedSaveKey(persistName, accountId)),
+    backup: localStorage.getItem(backupSaveKey(persistName, accountId)),
+  };
+}
+
+/** Keep the newest snapshot in the primary slot; push it to the cloud if it beat the server copy. */
+function adoptNewerSave(accountId: string, winner: string | null, cloudRaw: string | null) {
+  if (!winner) return null;
+  const primary = typeof window === "undefined" ? null : localStorage.getItem(scopedSaveKey(PROFILE_PERSIST_NAME, accountId));
+  if (winner !== primary) {
+    writeLocalSaveCache(accountId, PROFILE_PERSIST_NAME, winner);
+  }
+  if (isSaveProgressAhead(winner, cloudRaw)) {
+    scheduleCloudSave(winner);
+  }
+  return winner;
+}
+
 export function readLocalSaveCache(accountId: string, persistName: string) {
   if (typeof window === "undefined") return null;
   const primary = localStorage.getItem(scopedSaveKey(persistName, accountId));
@@ -99,19 +130,22 @@ export function readLocalSaveCache(accountId: string, persistName: string) {
   return null;
 }
 
-async function pushCloudSave(value: string) {
+async function pushCloudSave(value: string, keepalive = false) {
   try {
     const data = JSON.parse(value) as unknown;
-    await fetchWithTimeout(
-      "/api/save",
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ data }),
-      },
-      SAVE_FETCH_MS,
-    );
+    const init: RequestInit = {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ data }),
+      keepalive,
+    };
+    // pagehide/unload must not use AbortController — the timer would cancel keepalive.
+    if (keepalive) {
+      await fetch("/api/save", init);
+      return;
+    }
+    await fetchWithTimeout("/api/save", init, SAVE_FETCH_MS);
   } catch (err) {
     console.error("[cloud save]", err);
   }
@@ -125,7 +159,7 @@ export function flushCloudSave() {
   if (pendingCloudValue) {
     const value = pendingCloudValue;
     pendingCloudValue = null;
-    void pushCloudSave(value);
+    void pushCloudSave(value, true);
   }
 }
 
@@ -179,16 +213,21 @@ export async function pullCloudSaveIntoCache(accountId: string, previousAccountI
     migrateScopedSave(previousAccountId, accountId, PROFILE_PERSIST_NAME);
   }
   migrateUnscopedSave(accountId, PROFILE_PERSIST_NAME);
+  const { primary, backup } = readLocalSaveCandidates(accountId, PROFILE_PERSIST_NAME);
   try {
     const res = await fetchWithTimeout("/api/save", { credentials: "include" }, SAVE_FETCH_MS);
-    if (!res.ok) return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
+    if (!res.ok) return adoptNewerSave(accountId, pickNewerSaveRaw(primary, backup), null);
     const json = (await res.json()) as { ok?: boolean; data?: unknown };
-    if (!json.ok || json.data == null) return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
-    const raw = serializeSaveForStorage(json.data);
-    if (!isUsableSave(raw)) return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
-    writeLocalSaveCache(accountId, PROFILE_PERSIST_NAME, raw);
-    return raw;
+    if (!json.ok || json.data == null) {
+      return adoptNewerSave(accountId, pickNewerSaveRaw(primary, backup), null);
+    }
+    const cloudRaw = serializeSaveForStorage(json.data);
+    if (!isUsableSave(cloudRaw)) {
+      return adoptNewerSave(accountId, pickNewerSaveRaw(primary, backup), null);
+    }
+    const winner = pickNewerSaveRaw(primary, backup, cloudRaw);
+    return adoptNewerSave(accountId, winner, cloudRaw);
   } catch {
-    return readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
+    return adoptNewerSave(accountId, pickNewerSaveRaw(primary, backup), null);
   }
 }

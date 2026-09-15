@@ -2,7 +2,13 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
-import { createAccountStorage, PROFILE_PERSIST_NAME } from "@/lib/auth/accounts";
+import {
+  PROFILE_PERSIST_NAME,
+  clearSaveBackup,
+  createAccountStorage,
+  flushCloudSave,
+  getSessionAccountId,
+} from "@/lib/auth/accounts";
 import { expectedBm } from "@/lib/game/balance";
 import { CLASS_DEFS } from "@/lib/game/classes";
 import { applyClassChoice, migrateAssassinBuild, tagSaveItems } from "@/lib/game/classKit";
@@ -1345,10 +1351,16 @@ export const useGameStore = create<GameStore>()(
         });
         return result;
       },
-      resetSave: () =>
+      resetSave: () => {
         set(() => ({
           ...createInitialState(),
-        })),
+        }));
+        const id = getSessionAccountId();
+        if (id) {
+          clearSaveBackup(id, PROFILE_PERSIST_NAME);
+          flushCloudSave();
+        }
+      },
     })),
     {
       name: PROFILE_PERSIST_NAME,

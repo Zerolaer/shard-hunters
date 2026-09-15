@@ -1,14 +1,17 @@
 import { create } from "zustand";
 import {
+  PROFILE_PERSIST_NAME,
   flushCloudSave,
   getSessionAccountId,
   pullCloudSaveIntoCache,
+  readLocalSaveCache,
   readSessionHint,
   setSessionAccountId,
   type AccountRecord,
 } from "@/lib/auth/accounts";
 import { apiLogin, apiLogout, apiMe, apiRegister } from "@/lib/auth/api";
 import { HYDRATE_BUDGET_MS } from "@/lib/auth/http";
+import { isSaveProgressAhead } from "@/lib/auth/saveFormat";
 import { createInitialState } from "@/lib/game/createInitialState";
 import { useGameStore } from "./useGameStore";
 
@@ -27,8 +30,18 @@ interface AuthStore {
 async function syncCloudSave(accountId: string, previousAccountId: string | null) {
   try {
     await pullCloudSaveIntoCache(accountId, previousAccountId);
-    if (getSessionAccountId() === accountId) {
-      await useGameStore.persist.rehydrate();
+    if (getSessionAccountId() !== accountId) return;
+    const alreadyLive = useGameStore.persist.hasHydrated();
+    const disk = readLocalSaveCache(accountId, PROFILE_PERSIST_NAME);
+    // Ticks / offline catch-up may already be ahead of disk; rehydrate would roll that back.
+    if (alreadyLive && isSaveProgressAhead(useGameStore.getState(), disk)) {
+      flushCloudSave();
+      return;
+    }
+    await useGameStore.persist.rehydrate();
+    if (alreadyLive && useGameStore.getState().character.classId) {
+      useGameStore.getState().applyOfflineProgress();
+      flushCloudSave();
     }
   } catch (err) {
     console.error("[auth] cloud save sync failed", err);
