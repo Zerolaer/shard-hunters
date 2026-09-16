@@ -11,6 +11,7 @@ import {
   Shirt,
   Sparkles,
   Trash2,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { MAX_ENHANCE, RARITY_COLOR, SLOT_LABEL, STAT_LABEL } from "@/lib/game/constants";
@@ -51,6 +52,13 @@ function eligibleItems(inventory: Array<Item | null>, equipment: Record<EquipSlo
 }
 
 type BlessFx = "idle" | "charge" | "success" | "fail";
+
+/** Charge matches CSS; result hold is brief so Bless is usable right after. */
+const BLESS_MS = { charge: 720, success: 160, fail: 140 } as const;
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => window.setTimeout(r, ms));
+}
 
 function blessPreviewRows(item: Item) {
   const m = enhanceMultiplier(item.enhanceLevel);
@@ -106,7 +114,10 @@ export function WorkshopPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [blessFx, setBlessFx] = useState<BlessFx>("idle");
   const [blessResult, setBlessResult] = useState<"ok" | "fail" | null>(null);
+  const [quickBless, setQuickBless] = useState(false);
   const blessBusy = useRef(false);
+  const quickBlessRef = useRef(quickBless);
+  quickBlessRef.current = quickBless;
 
   const candidates = useMemo(() => eligibleItems(inventory, equipment), [inventory, equipment]);
   const item = candidates.find((it) => it.id === targetId) ?? candidates[0] ?? null;
@@ -158,14 +169,26 @@ export function WorkshopPanel() {
     if (!item || blessBusy.current || !blessGate.ok || !canAffordBless) return;
     blessBusy.current = true;
     setBlessResult(null);
-    setBlessFx("charge");
     setMessage(null);
-    await new Promise<void>((r) => window.setTimeout(r, 720));
+
+    const quick = quickBlessRef.current;
+    if (!quick) {
+      setBlessFx("charge");
+      await sleep(BLESS_MS.charge);
+    }
+
     const res = blessItem(item.id);
     setMessage(res.message);
     setBlessResult(res.ok ? "ok" : "fail");
+
+    if (quick) {
+      setBlessFx("idle");
+      blessBusy.current = false;
+      return;
+    }
+
     setBlessFx(res.ok ? "success" : "fail");
-    await new Promise<void>((r) => window.setTimeout(r, res.ok ? 900 : 850));
+    await sleep(res.ok ? BLESS_MS.success : BLESS_MS.fail);
     setBlessFx("idle");
     blessBusy.current = false;
   }
@@ -348,14 +371,34 @@ export function WorkshopPanel() {
             <div className="es-plate space-y-2.5 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Cost gold={BLESSING.cost.gold} shards={BLESSING.cost.shards} sparks={BLESSING.cost.sparks} />
-                {blessResult === "ok" ? (
-                  <span className="text-[12px] font-medium text-[#4ade80]">Успех — предмет блеснут</span>
-                ) : null}
-                {blessResult === "fail" ? (
-                  <span className="text-[12px] font-medium text-[#f87171]">
-                    Неудача — искры сгорели, предмет цел
-                  </span>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {blessResult === "ok" ? (
+                    <span className="text-[12px] font-medium text-[#4ade80]">Успех — предмет блеснут</span>
+                  ) : null}
+                  {blessResult === "fail" ? (
+                    <span className="text-[12px] font-medium text-[#f87171]">
+                      Неудача — искры сгорели, предмет цел
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={quickBless}
+                    disabled={blessFx === "charge"}
+                    onClick={() => setQuickBless((v) => !v)}
+                    className={cn(
+                      "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2 text-[10px] font-semibold tracking-wide transition-colors",
+                      quickBless
+                        ? "border-amber-400/45 bg-amber-400/15 text-amber-200"
+                        : "border-white/10 bg-black/30 text-[#8aa0b4]",
+                      blessFx === "charge" && "opacity-60",
+                    )}
+                    title="Быстрое благословение — без ритуала"
+                  >
+                    <Zap className="h-3 w-3" />
+                    Быстро
+                  </button>
+                </div>
               </div>
               <button
                 type="button"
@@ -365,7 +408,10 @@ export function WorkshopPanel() {
                 title={blessGate.ok ? "Благословить" : blessGate.reason}
               >
                 <span
-                  className={cn("bless-cta-fill", blessFx === "charge" && "is-running")}
+                  className={cn(
+                    "bless-cta-fill",
+                    !quickBless && blessFx === "charge" && "is-running",
+                  )}
                   aria-hidden
                 />
                 <span className="relative z-[1] inline-flex items-center gap-2">

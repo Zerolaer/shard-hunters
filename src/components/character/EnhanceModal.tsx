@@ -92,7 +92,7 @@ export function EnhanceModal() {
   const [fx, setFx] = useState<FxKind>("idle");
   const [fxNonce, setFxNonce] = useState(0);
   const [fxLevel, setFxLevel] = useState<number | null>(null);
-  /** Scale-bar paint: success fills 1→level green; fail = red only on attempt, green on kept. */
+  /** Scale-bar paint: animate only the changed chip; secured levels stay solid green. */
   const [scalePaint, setScalePaint] = useState<"ok" | "fail" | null>(null);
   const [scalePaintLevel, setScalePaintLevel] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -642,15 +642,19 @@ export function EnhanceModal() {
                   {Array.from({ length: MAX_ENHANCE }, (_, i) => {
                     const level = i + 1;
                     const disabled = running || level <= minCurrent;
-                    // Fail: only the missed attempt chip jerks red; kept levels stay green.
-                    const keptAfterFail = fxLevel ?? 0;
+                    // Secured greens stay solid; only the newly reached / failed chip animates.
+                    const securedLevel =
+                      scalePaint === "fail"
+                        ? (fxLevel ?? 0)
+                        : scalePaint === "ok"
+                          ? scalePaintLevel
+                          : (focusItem?.enhanceLevel ?? 0);
                     const fillFail =
                       scalePaint === "fail" && level === scalePaintLevel;
-                    const fillOk =
-                      (scalePaint === "ok" && level <= scalePaintLevel) ||
-                      (scalePaint === "fail" &&
-                        level <= keptAfterFail &&
-                        level !== scalePaintLevel);
+                    const fillOkNew =
+                      scalePaint === "ok" && level === scalePaintLevel;
+                    const filled =
+                      level <= securedLevel && !fillFail && !fillOkNew;
                     return (
                       <button
                         key={level}
@@ -664,16 +668,10 @@ export function EnhanceModal() {
                             selectedItems[0].enhanceLevel === level &&
                             !scalePaint &&
                             "is-actual",
-                          fillOk && "is-fill-ok",
+                          filled && "is-filled",
+                          fillOkNew && "is-fill-ok",
                           fillFail && "is-fill-fail",
                         )}
-                        style={
-                          fillOk || fillFail
-                            ? {
-                                animationDelay: `${(level - 1) * (quickEnhance ? 8 : 22)}ms`,
-                              }
-                            : undefined
-                        }
                         aria-label={`Цель +${level}`}
                       >
                         {level}
