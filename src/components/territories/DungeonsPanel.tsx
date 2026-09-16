@@ -8,6 +8,7 @@ import {
   Pickaxe,
   Sparkles,
   Timer,
+  TowerControl,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -27,7 +28,18 @@ import {
   type DungeonHall,
   type DungeonType,
 } from "@/lib/game/dungeons";
+import {
+  TOWER_MIN_LEVEL,
+  TOWER_MILESTONE,
+  emptyTowerState,
+  isTowerMilestone,
+  towerClearBonus,
+  towerComfortBm,
+  towerMilestoneRarity,
+  towerRecommendedBm,
+} from "@/lib/game/tower";
 import { formatFullDigits } from "@/lib/game/formulas";
+import { RARITY_LABEL } from "@/lib/game/constants";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
 
 const TYPE_ICON = {
@@ -50,14 +62,17 @@ function rateChips(hall: DungeonHall) {
 export function DungeonsPanel() {
   const level = useGameStore((s) => s.character.level);
   const dungeon = useGameStore((s) => s.dungeon);
+  const tower = useGameStore((s) => s.tower);
   const enterDungeon = useGameStore((s) => s.enterDungeon);
   const leaveDungeon = useGameStore((s) => s.leaveDungeon);
+  const enterTower = useGameStore((s) => s.enterTower);
   const derived = useDerivedStats();
   const [type, setType] = useState<DungeonType>("xp");
   const [msg, setMsg] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const dungeonState = dungeon ?? emptyDungeonState();
+  const towerState = tower ?? emptyTowerState();
 
   useEffect(() => {
     if (!dungeon?.active) return;
@@ -69,16 +84,56 @@ export function DungeonsPanel() {
   const activeHall = active ? DUNGEON_HALL_BY_ID[active.hallId] : null;
   const remain = dungeonRemainingMs(active, now);
   const halls = hallsForType(type);
+  const towerFloor = towerState.floor;
+  const towerRec = towerRecommendedBm(towerFloor);
+  const towerComfort = towerComfortBm(towerFloor);
+  const towerLocked = level < TOWER_MIN_LEVEL;
+  const towerWeak = !towerLocked && derived.powerScore < towerComfort;
+  const towerOk = !towerLocked && derived.powerScore >= towerRec;
+  const towerBusy = towerState.active || !!active;
+  const nextMilestone = Math.ceil(towerFloor / TOWER_MILESTONE) * TOWER_MILESTONE;
+  const milestoneBonus = towerClearBonus(nextMilestone);
+  const regularBonus = towerClearBonus(towerFloor);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="es-plate p-3">
         <div className="font-display text-[14px] text-white">Подземелья</div>
         <p className="mt-1 text-[11px] leading-snug text-[#8aa0b4]">
-          Ежедневные часовые залы. Выберите тип награды, затем зал по уровню. Вход
-          по уровню; слабый БМ — будете умирать. Каждый тип — час в сутки. Выход
-          ставит таймер на паузу: можно вернуться и доиграть оставшееся время.
+          Часовые залы — ежедневный фарм. Башня — бесконечные этажи боссов: убил
+          стража — следующий этаж. Каждые {TOWER_MILESTONE} этажей дают особую награду.
         </p>
+
+        {towerState.active ? (
+          <div className="mt-3 rounded-xl border border-[#fb7185]/40 bg-[#fb7185]/10 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-[#fb7185]">
+                  Активный забег · Башня
+                </div>
+                <div className="mt-0.5 font-display text-[15px] text-white">
+                  Этаж {towerFloor}
+                  {towerState.bestFloor > 0 ? (
+                    <span className="ml-2 font-sans text-[11px] font-normal text-white/50">
+                      лучший {towerState.bestFloor}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const res = leaveDungeon();
+                  setMsg(res.message);
+                }}
+                className="es-btn es-inv-control shrink-0 px-2.5"
+              >
+                <DoorOpen className="h-3.5 w-3.5" />
+                Выйти
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {active && activeHall ? (
           <div className="mt-3 rounded-xl border border-[var(--accent)]/35 bg-[var(--accent)]/8 p-3">
@@ -109,6 +164,77 @@ export function DungeonsPanel() {
         ) : null}
 
         {msg ? <p className="mt-2 text-[11px] text-white/65">{msg}</p> : null}
+      </div>
+
+      <div
+        className={cn(
+          "rounded-xl border bg-black/35 p-3 backdrop-blur-md",
+          towerLocked && "opacity-45",
+        )}
+        style={{ borderColor: `${"#fb7185"}55` }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-[#fb7185]">
+              <TowerControl className="h-3.5 w-3.5" />
+              Башня Испытаний
+            </div>
+            <div className="mt-1 font-display text-[15px] text-white">
+              Этаж {towerFloor}
+              {towerState.bestFloor > 0 ? (
+                <span className="ml-2 font-sans text-[11px] font-normal text-white/45">
+                  рекорд {towerState.bestFloor}
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-[#8aa0b4]">
+              Бесконечный шпиль: каждый этаж — босс. Смерть оставляет вас на том же
+              этаже. Выход сохраняет прогресс.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+              <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 tabular-nums text-white/60">
+                ур. {TOWER_MIN_LEVEL}+
+              </span>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
+                  towerOk
+                    ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200/90"
+                    : towerWeak
+                      ? "border-rose-400/25 bg-rose-500/10 text-rose-200/90"
+                      : "border-amber-400/20 bg-amber-500/10 text-amber-100/90",
+                )}
+              >
+                <Zap className="h-3 w-3" />
+                БМ {formatFullDigits(towerRec)}
+              </span>
+              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-white/50">
+                этаж: +{formatFullDigits(regularBonus.gold)} зол.
+              </span>
+              <span className="rounded border border-[#fb7185]/25 bg-[#fb7185]/10 px-1.5 py-0.5 text-[#fda4af]">
+                эт. {nextMilestone}: {RARITY_LABEL[towerMilestoneRarity(nextMilestone)]}
+                {milestoneBonus.gemRank ? " · камень" : ""}
+                {isTowerMilestone(towerFloor) ? " · сейчас" : ""}
+              </span>
+            </div>
+            {towerWeak ? (
+              <p className="mt-1.5 text-[10px] text-rose-300/80">
+                Ваш БМ ниже комфортного — страж этажа опасен.
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            disabled={towerLocked || towerBusy}
+            onClick={() => {
+              const res = enterTower();
+              setMsg(res.message);
+            }}
+            className="es-btn es-btn-cyan es-inv-control shrink-0 px-2.5"
+          >
+            {towerState.bestFloor > 0 ? "Продолжить" : "Войти"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
@@ -158,7 +284,7 @@ export function DungeonsPanel() {
           const weak = !locked && derived.powerScore < comfort;
           const okBm = !locked && derived.powerScore >= rec;
           const available = dungeonTypeAvailable(dungeonState, hall.type, now);
-          const busy = !!active;
+          const busy = !!active || towerState.active;
           const pausedMs = dungeonPausedRemainingMs(dungeonState, hall.type, now);
           return (
             <div

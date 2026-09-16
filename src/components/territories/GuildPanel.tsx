@@ -28,6 +28,7 @@ import {
   playerGuildRole,
   worldGuildOccupancy,
 } from "@/lib/game/guild";
+import { formatBuffCountdown } from "@/lib/game/activeBuffs";
 import { formatFullDigits, formatNumber, guildXpToNext } from "@/lib/game/formulas";
 import type { GuildJoinMode } from "@/lib/game/types";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
@@ -306,8 +307,8 @@ function GuildHome() {
               {guild.buffs.map((b) => {
                 const def = GUILD_BUFFS.find((x) => x.id === b.id);
                 return (
-                  <RpChip key={b.id}>
-                    {def?.name ?? b.id} · {Math.max(0, Math.ceil((b.expiresAt - Date.now()) / 60000))}м
+                  <RpChip key={b.id} title={def?.name ?? b.id}>
+                    {def?.name ?? b.id} · {formatBuffCountdown((b.expiresAt - Date.now()) / 1000)}
                   </RpChip>
                 );
               })}
@@ -388,21 +389,28 @@ function GuildHome() {
             </div>
           ))}
           <div className="text-[11px] text-[#8aa0b4]">Баффы на час:</div>
-          {GUILD_BUFFS.map((b) => (
-            <div key={b.id} className="rp-card flex items-center justify-between gap-2 p-3">
-              <div>
-                <div className="font-display text-[13px] text-white">{b.name}</div>
-                <p className="text-[11px] text-[#8aa0b4]">{b.blurb}</p>
+          {GUILD_BUFFS.map((b) => {
+            const live = guild.buffs.find((x) => x.id === b.id && x.expiresAt > Date.now());
+            const remain = live ? formatBuffCountdown((live.expiresAt - Date.now()) / 1000) : null;
+            return (
+              <div key={b.id} className="rp-card flex items-center justify-between gap-2 p-3">
+                <div>
+                  <div className="font-display text-[13px] text-white">{b.name}</div>
+                  <p className="text-[11px] text-[#8aa0b4]">
+                    {b.blurb}
+                    {remain ? ` · ещё ${remain}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMsg(activateGuildBuff(b.id).message)}
+                  className="es-btn es-inv-control shrink-0 px-2.5"
+                >
+                  {b.coins}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setMsg(activateGuildBuff(b.id).message)}
-                className="es-btn es-inv-control shrink-0 px-2.5"
-              >
-                {b.coins}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
 

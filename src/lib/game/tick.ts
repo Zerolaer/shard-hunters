@@ -54,6 +54,17 @@ import {
   normalizeDungeonState,
   recommendedSafeLocationAfterDungeon,
 } from "./dungeons";
+import {
+  isTowerLocationId,
+  isTowerMilestone,
+  normalizeTowerState,
+  TOWER_LOCATION_ID,
+  TOWER_SPOT_ID,
+  towerBossName,
+  towerClearBonus,
+  towerCombatFloor,
+  emptyTowerState,
+} from "./tower";
 import { ensureHunters, simulateHunters } from "./hunters";
 import { ensureFarmState, FARM_SPOT_BY_ID, occupySpot, vacatePlayerSpots } from "./spots";
 import {
@@ -259,6 +270,7 @@ export function ensureWorld(state: Draft) {
   // Ensure dungeon locations/spots are registered (module side-effect + re-import safety).
   void DUNGEON_HALL_BY_ID;
   state.dungeon = normalizeDungeonState(state.dungeon);
+  state.tower = normalizeTowerState(state.tower);
   state.guild = normalizeGuild(state.guild);
   if (!state.mines) state.mines = {};
   for (const mine of MINES) {
@@ -290,6 +302,9 @@ export function ensureWorld(state: Draft) {
     if (!state.progression.locations[id]) {
       state.progression.locations[id] = emptyLocationProgress();
     }
+  }
+  if (!state.progression.locations[TOWER_LOCATION_ID]) {
+    state.progression.locations[TOWER_LOCATION_ID] = emptyLocationProgress();
   }
   if (!state.progression.unlockedLocationIds?.length) {
     state.progression.unlockedLocationIds = ["woods"];
@@ -404,7 +419,84 @@ function gainXp(state: Draft, amount: number) {
   }
 }
 
+function spawnTowerGuardian(state: Draft) {
+  if (!state.tower) state.tower = emptyTowerState();
+  const floor = Math.max(1, state.tower.floor);
+  state.combat.mode = "pve";
+  state.combat.monster = generateMonster({
+    locationId: TOWER_LOCATION_ID,
+    floor: towerCombatFloor(floor),
+    isBoss: true,
+    danger: 1,
+  });
+  state.combat.monster.name = towerBossName(floor);
+  state.combat.monsterAtkAcc = 0;
+  state.combat.playerAtkAcc = 0;
+  if (!state.progression.locations[TOWER_LOCATION_ID]) {
+    state.progression.locations[TOWER_LOCATION_ID] = emptyLocationProgress();
+  }
+  state.progression.locations[TOWER_LOCATION_ID].floor = floor;
+  onSinNewMonster(state);
+}
+
+function grantTowerClear(state: Draft, floor: number) {
+  const bonus = towerClearBonus(floor);
+  const milestone = isTowerMilestone(floor);
+  state.resources.gold += bonus.gold;
+  state.resources.shards += bonus.shards;
+  if (bonus.ore > 0) {
+    state.resources.ore += bonus.ore;
+    noteGuildOre(state.guild, bonus.ore);
+  }
+  if (bonus.sparks > 0) {
+    state.resources.blessing = (state.resources.blessing ?? 0) + bonus.sparks;
+  }
+  if (bonus.itemRarity) {
+    const item = generateItem({
+      itemLevel: Math.max(1, 6 + floor),
+      rarity: bonus.itemRarity,
+      preferredClass: state.character.classId,
+    });
+    receiveLootItem(state, item, "boss");
+  }
+  if (bonus.gemRank) {
+    receiveGem(state, createGem(bonus.gemRank), true);
+  }
+  const extras = [`+${bonus.gold} золота`, `+${bonus.shards} осколков`];
+  if (bonus.ore > 0) extras.push(`+${bonus.ore} руды`);
+  if (bonus.sparks > 0) extras.push(`+${bonus.sparks} ${BLESSING_MATERIAL_LABEL.toLowerCase()}`);
+  pushLog(
+    state,
+    milestone ? "boss" : "gold",
+    milestone
+      ? `Башня · этаж ${floor} пройден! Особая награда: ${extras.join(", ")}`
+      : `Башня · этаж ${floor}: ${extras.join(", ")}`,
+  );
+}
+
+export function beginTowerRun(state: Draft) {
+  if (!state.tower) state.tower = emptyTowerState();
+  state.tower = normalizeTowerState(state.tower);
+  vacatePlayerSpots(state.farm);
+  state.combat.locationId = TOWER_LOCATION_ID;
+  state.combat.spotId = TOWER_SPOT_ID;
+  state.combat.mode = "pve";
+  state.combat.lootlessKills = 0;
+  state.tower.active = true;
+  spawnTowerGuardian(state);
+  state.settings.autoBattle = true;
+}
+
+export function leaveTowerSession(state: Draft, reason: string) {
+  if (state.tower) state.tower.active = false;
+  evacuateFromDungeon(state, reason);
+}
+
 function spawnNext(state: Draft, isBoss: boolean) {
+  if (isTowerLocationId(state.combat.locationId)) {
+    spawnTowerGuardian(state);
+    return;
+  }
   const locId = state.combat.locationId;
   const prog = state.progression.locations[locId] ?? emptyLocationProgress();
   const danger = currentSpot(state)?.danger ?? 1;
@@ -498,7 +590,18 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
   }
   const prog = state.progression.locations[locId];
 
-  // Dungeons: endless trash farm, no floor/boss progression.
+  if (isTowerLocationId(locId)) {
+    if (!state.tower) state.tower = emptyTowerState();
+    const cleared = Math.max(1, state.tower.floor);
+    grantTowerClear(state, cleared);
+    state.tower.bestFloor = Math.max(state.tower.bestFloor, cleared);
+    state.tower.floor = cleared + 1;
+    prog.floor = state.tower.floor;
+    spawnTowerGuardian(state);
+    return;
+  }
+
+  // Hourly halls: endless trash farm, no floor/boss progression.
   if (isDungeonLocationId(locId)) {
     spawnNext(state, false);
     return;
@@ -582,7 +685,12 @@ export function endDungeonSession(state: Draft, reason: string, now = Date.now()
 function evacuateFromDungeon(state: Draft, reason: string) {
   const was = state.dungeon.active;
   state.dungeon.active = null;
-  if (!was && !isDungeonLocationId(state.combat.locationId)) return;
+  if (state.tower && (state.tower.active || isTowerLocationId(state.combat.locationId))) {
+    state.tower.active = false;
+  }
+  if (!was && !isDungeonLocationId(state.combat.locationId) && !isTowerLocationId(state.combat.locationId)) {
+    return;
+  }
 
   const derived = statsOf(state);
   const locId = recommendedSafeLocationAfterDungeon(state.character.level, derived.powerScore);

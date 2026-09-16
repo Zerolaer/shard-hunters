@@ -520,6 +520,14 @@ export interface DungeonState {
   paused: Partial<Record<DungeonType, DungeonPausedBudget>>;
 }
 
+export interface TowerState {
+  /** Floor the hunter is attempting (1-based, never resets on leave). */
+  floor: number;
+  /** Highest floor cleared. */
+  bestFloor: number;
+  active: boolean;
+}
+
 export interface GameData {
   character: Character;
   inventory: Array<Item | null>;
@@ -542,4 +550,5 @@ export interface GameData {
   meta: GameMeta;
   oreAcc: number;
   dungeon: DungeonState;
+  tower: TowerState;
 }

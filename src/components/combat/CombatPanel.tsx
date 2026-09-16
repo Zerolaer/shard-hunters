@@ -15,6 +15,7 @@ import {
   formatDungeonCountdown,
   isDungeonLocationId,
 } from "@/lib/game/dungeons";
+import { isTowerLocationId, TOWER_MILESTONE, towerRecommendedBm } from "@/lib/game/tower";
 import { formatFullDigits } from "@/lib/game/formulas";
 import { FARM_SPOT_BY_ID } from "@/lib/game/spots";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
@@ -39,6 +40,7 @@ export function CombatPanel() {
   const monsterEffects = useGameStore((s) => s.combat.monsterEffects ?? []);
   const prog = useGameStore((s) => s.progression.locations[s.combat.locationId]);
   const dungeon = useGameStore((s) => s.dungeon);
+  const tower = useGameStore((s) => s.tower);
   const challengeBoss = useGameStore((s) => s.challengeBoss);
   const leaveDungeon = useGameStore((s) => s.leaveDungeon);
   const autoBattle = useGameStore((s) => s.settings.autoBattle);
@@ -49,7 +51,9 @@ export function CombatPanel() {
   const derived = useDerivedStats();
   const loc = LOCATION_BY_ID[locationId];
   const spot = FARM_SPOT_BY_ID[spotId];
-  const inDungeon = !!dungeon?.active || isDungeonLocationId(locationId);
+  const inTower = !!tower?.active || isTowerLocationId(locationId);
+  const inHourlyDungeon = !!dungeon?.active;
+  const inDungeon = inTower || inHourlyDungeon || isDungeonLocationId(locationId);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -62,7 +66,7 @@ export function CombatPanel() {
     return () => window.clearInterval(id);
   }, [dungeon?.active]);
 
-  const floor = prog?.floor ?? 1;
+  const floor = inTower ? (tower?.floor ?? 1) : (prog?.floor ?? 1);
   const bossReady = prog?.bossReady ?? false;
   const showBossCta = !inDungeon && bossReady && !monster?.isBoss && mode !== "pvp";
   const killsToBoss = (prog?.killsOnFloor ?? 0) % KILLS_FOR_BOSS;
@@ -70,7 +74,7 @@ export function CombatPanel() {
   const enemyHits = texts.filter((t) => !t.isPlayerTarget);
   const playerHits = texts.filter((t) => t.isPlayerTarget);
   const locBm = loc ? locationRecommendedBm(loc) : 0;
-  const spotBm = spot?.requiredBm ?? locBm;
+  const spotBm = inTower ? towerRecommendedBm(tower?.floor ?? 1) : (spot?.requiredBm ?? locBm);
   const enemyBm = monster
     ? monster.isPvp
       ? expectedBm(monster.level)
@@ -85,7 +89,11 @@ export function CombatPanel() {
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="min-w-0 flex-1 truncate font-display text-[15px] font-medium tracking-tight text-white">
             {loc?.name ?? "Локация"}
-            {inDungeon ? (
+            {inTower ? (
+              <span className="ml-2 font-sans text-xs font-normal text-[#fb7185]">
+                Башня · этаж {floor}
+              </span>
+            ) : inDungeon ? (
               <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
                 Подземелье
                 {dungeon?.active ? ` · ${DUNGEON_TYPE_LABEL[dungeon.active.type]}` : ""}
@@ -157,7 +165,13 @@ export function CombatPanel() {
 
         {mode !== "pvp" ? (
           <div className="flex min-h-8 items-center gap-2">
-            {inDungeon && dungeon?.active ? (
+            {inTower ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#fb7185]/30 bg-[#fb7185]/10 px-2 py-1 text-[11px] tabular-nums text-[#fda4af]">
+                этаж {floor}
+                {tower?.bestFloor ? ` · рекорд ${tower.bestFloor}` : ""}
+                {floor % TOWER_MILESTONE === 0 ? " · особая награда" : ` · ${TOWER_MILESTONE - (floor % TOWER_MILESTONE)} до награды`}
+              </span>
+            ) : inHourlyDungeon && dungeon?.active ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-1 text-[11px] tabular-nums text-[var(--accent)]">
                 <Timer className="h-3.5 w-3.5" />
                 {formatDungeonCountdown(dungeonRemain)}
@@ -187,12 +201,16 @@ export function CombatPanel() {
 
         <div aria-hidden className="max-lg:hidden" />
 
-        {inDungeon && dungeon?.active ? (
+        {inTower || inHourlyDungeon ? (
           <button
             type="button"
             onClick={() => leaveDungeon()}
             className="es-btn h-8 w-full px-2.5 text-xs font-medium"
-            title="Выход ставит таймер на паузу. Можно вернуться сегодня."
+            title={
+              inTower
+                ? "Выход сохраняет этаж. Можно вернуться."
+                : "Выход ставит таймер на паузу. Можно вернуться сегодня."
+            }
           >
             <DoorOpen className="h-3.5 w-3.5" />
             Выйти

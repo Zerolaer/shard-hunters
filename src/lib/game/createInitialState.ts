@@ -16,6 +16,7 @@ import { emptyGuildState } from "./guild";
 import { emptySinBuild, emptySinCombat } from "./sin/state";
 import { DEFAULT_AVATAR_ID } from "./avatars";
 import "./dungeons";
+import { emptyTowerState } from "./tower";
 import { createWorldHunters, HUNTER_ROSTER_GEN } from "./hunters";
 import type { GameData, SkillId } from "./types";
 
@@ -132,6 +133,7 @@ export function createInitialState(opts?: { name?: string }): GameData {
     meta: { lastTick: Date.now(), pendingOffline: null, hunterAcc: 0, hunterRoster: HUNTER_ROSTER_GEN },
     oreAcc: 0,
     dungeon: { active: null, dailyUsed: {}, paused: {} },
+    tower: emptyTowerState(),
   };
 
   const derived = statsOf(state);

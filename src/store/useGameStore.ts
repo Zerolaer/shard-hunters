@@ -76,6 +76,14 @@ import {
   migrateDungeonPauseResume,
   normalizeDungeonState,
 } from "@/lib/game/dungeons";
+import {
+  emptyTowerState,
+  isTowerLocationId,
+  normalizeTowerState,
+  TOWER_MIN_LEVEL,
+  towerComfortBm,
+  towerRecommendedBm,
+} from "@/lib/game/tower";
 import { emptySinBuild, emptySinCombat } from "@/lib/game/sin/state";
 import { enhanceCost, enhanceLevelAfterFail, enhanceSuccessChance } from "@/lib/game/enhance";
 import {
@@ -145,6 +153,8 @@ import {
   spawnNext,
   syncAutoSellSettings,
   tickGame,
+  beginTowerRun,
+  leaveTowerSession,
 } from "@/lib/game/tick";
 import type {
   CoreStat,
@@ -209,6 +219,7 @@ export interface GameStore extends GameData {
   leaveMine: () => void;
   enterDungeon: (hallId: string) => { ok: boolean; message: string };
   leaveDungeon: () => { ok: boolean; message: string };
+  enterTower: () => { ok: boolean; message: string };
   donateToGuild: (kind: "gold" | "ore", amount: number) => void;
   createGuild: (name: string, tag: string, joinMode: GuildJoinMode, motd: string) => { ok: boolean; message: string };
   leaveGuild: () => { ok: boolean; message: string };
@@ -230,6 +241,19 @@ export interface GameStore extends GameData {
 function syncGuildPlayerName(state: GameData) {
   const m = state.guild.members.find((x) => x.isPlayer);
   if (m) m.name = state.character.name;
+}
+
+function leaveInstanceIfNeeded(s: GameData) {
+  if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
+    leaveTowerSession(s, "Вы покинули Башню. Этаж сохранён — можно вернуться.");
+    return;
+  }
+  if (s.dungeon?.active || isDungeonLocationId(s.combat.locationId)) {
+    pauseDungeonSession(
+      s,
+      "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.",
+    );
+  }
 }
 
 export const useGameStore = create<GameStore>()(
@@ -296,9 +320,7 @@ export const useGameStore = create<GameStore>()(
         }),
       setLocation: (locationId) =>
         set((s) => {
-          if (s.dungeon?.active || isDungeonLocationId(s.combat.locationId)) {
-            pauseDungeonSession(s, "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.");
-          }
+          leaveInstanceIfNeeded(s);
           const loc = LOCATIONS.find((l) => l.id === locationId);
           if (!loc) return;
           if (!s.progression.unlockedLocationIds.includes(locationId)) return;
@@ -1010,7 +1032,7 @@ export const useGameStore = create<GameStore>()(
         let result = { ok: false, message: "Спот недоступен" };
         set((s) => {
           if (s.dungeon?.active || isDungeonLocationId(s.combat.locationId)) {
-            pauseDungeonSession(s, "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.");
+            leaveInstanceIfNeeded(s);
           }
           const def = FARM_SPOT_BY_ID[spotId];
           if (!def || isDungeonLocationId(def.locationId)) return;
@@ -1143,6 +1165,10 @@ export const useGameStore = create<GameStore>()(
             result = { ok: false, message: "Вы уже в подземелье" };
             return;
           }
+          if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Сначала покиньте Башню" };
+            return;
+          }
           const now = Date.now();
           const budget = dungeonBudgetRemainingMs(s.dungeon, hall.type, now);
           if (budget <= 0) {
@@ -1204,12 +1230,51 @@ export const useGameStore = create<GameStore>()(
       leaveDungeon: () => {
         let result = { ok: false, message: "Вы не в подземелье" };
         set((s) => {
+          if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
+            leaveTowerSession(s, "Вы покинули Башню. Этаж сохранён — можно вернуться.");
+            result = { ok: true, message: "Выход из Башни. Прогресс этажей сохранён." };
+            return;
+          }
           if (!s.dungeon?.active && !isDungeonLocationId(s.combat.locationId)) return;
           pauseDungeonSession(
             s,
             "Вы покинули подземелье. Остаток времени сохранён — можно вернуться сегодня.",
           );
           result = { ok: true, message: "Выход из подземелья. Таймер на паузе." };
+        });
+        return result;
+      },
+      enterTower: () => {
+        let result = { ok: false, message: "Башня недоступна" };
+        set((s) => {
+          if (!s.tower) s.tower = emptyTowerState();
+          s.tower = normalizeTowerState(s.tower);
+          if (s.character.level < TOWER_MIN_LEVEL) {
+            result = { ok: false, message: `Нужен ${TOWER_MIN_LEVEL} уровень` };
+            return;
+          }
+          if (s.dungeon?.active) {
+            result = { ok: false, message: "Сначала покиньте зал подземелья" };
+            return;
+          }
+          if (s.tower.active || isTowerLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Вы уже в Башне" };
+            return;
+          }
+          const floor = s.tower.floor;
+          const derived = statsOf(s);
+          const rec = towerRecommendedBm(floor);
+          const comfort = towerComfortBm(floor);
+          beginTowerRun(s);
+          const bmWarn =
+            derived.powerScore < comfort
+              ? ` · БМ слабовато (рек. ${formatFullDigits(rec)}) — этаж опасен`
+              : "";
+          result = {
+            ok: true,
+            message: `Башня Испытаний · этаж ${floor}.${bmWarn}`,
+          };
+          pushLog(s, "system", result.message);
         });
         return result;
       },
@@ -1366,9 +1431,12 @@ export const useGameStore = create<GameStore>()(
       name: PROFILE_PERSIST_NAME,
       storage: createJSONStorage(() => createAccountStorage(PROFILE_PERSIST_NAME)),
       skipHydration: true,
-      version: 7,
+      version: 8,
       migrate: (persisted, version) => {
         const p = persisted as GameData;
+        if (version < 8) {
+          p.tower = emptyTowerState();
+        }
         if (version < 7) {
           p.dungeon = migrateDungeonPauseResume(p.dungeon);
         }
@@ -1436,6 +1504,7 @@ export const useGameStore = create<GameStore>()(
         meta: s.meta,
         oreAcc: s.oreAcc,
         dungeon: normalizeDungeonState(s.dungeon ?? emptyDungeonState()),
+        tower: normalizeTowerState(s.tower ?? emptyTowerState()),
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<GameData>;
@@ -1490,6 +1559,7 @@ export const useGameStore = create<GameStore>()(
           gems: p.gems ?? [],
           inventory: normalizeInventory(p.inventory) ?? current.inventory,
           dungeon: normalizeDungeonState(p.dungeon ?? emptyDungeonState()),
+          tower: normalizeTowerState(p.tower ?? current.tower ?? emptyTowerState()),
           worldHunters: p.worldHunters ?? current.worldHunters,
         };
         tagSaveItems(merged);

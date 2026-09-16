@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AuthScreen } from "@/components/auth/AuthScreen";
 import { ClassPicker } from "@/components/auth/ClassPicker";
 import { CombatPanel } from "@/components/combat/CombatPanel";
+import { BuffTray } from "@/components/layout/BuffTray";
 import { GameHeader } from "@/components/layout/GameHeader";
 import { MobileDock } from "@/components/layout/MobileDock";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
@@ -160,6 +161,7 @@ export function GameShell() {
               <RightTabs />
             </div>
           </main>
+          <BuffTray />
           <MobileDock />
         </>
       )}

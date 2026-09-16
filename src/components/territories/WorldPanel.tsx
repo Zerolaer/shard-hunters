@@ -17,7 +17,7 @@ export function WorldPanel() {
       <div className="es-plate p-2.5">
         <div className="font-display text-[14px] text-white">Карта мира</div>
         <p className="mt-0.5 text-[11px] text-[#8aa0b4]">
-          Споты фарма, шахты и ежедневные подземелья.
+          Споты фарма, шахты, ежедневные залы и Башня.
         </p>
         <div className="mt-2.5 grid grid-cols-3 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
           <button

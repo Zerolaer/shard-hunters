@@ -406,7 +406,9 @@ export function normalizeGuild(raw: Partial<GuildState> | undefined | null): Gui
     joinMode: raw.joinMode ?? "open",
     motd: raw.motd ?? "",
     skillRanks: { ...(raw.skillRanks ?? {}) },
-    buffs: [...(raw.buffs ?? [])],
+    buffs: (raw.buffs ?? []).filter(
+      (b) => b && typeof b.id === "string" && typeof b.expiresAt === "number" && b.expiresAt > Date.now(),
+    ),
     quests: raw.quests?.length ? raw.quests : defaultQuests(),
     questDay: raw.questDay ?? "",
     applications: [...(raw.applications ?? [])],
