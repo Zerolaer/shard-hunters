@@ -92,7 +92,7 @@ export function EnhanceModal() {
   const [fx, setFx] = useState<FxKind>("idle");
   const [fxNonce, setFxNonce] = useState(0);
   const [fxLevel, setFxLevel] = useState<number | null>(null);
-  /** Scale-bar paint: success fills 1→level green; fail paints red up to attempted. */
+  /** Scale-bar paint: success fills 1→level green; fail = red only on attempt, green on kept. */
   const [scalePaint, setScalePaint] = useState<"ok" | "fail" | null>(null);
   const [scalePaintLevel, setScalePaintLevel] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -642,8 +642,15 @@ export function EnhanceModal() {
                   {Array.from({ length: MAX_ENHANCE }, (_, i) => {
                     const level = i + 1;
                     const disabled = running || level <= minCurrent;
-                    const fillOk = scalePaint === "ok" && level <= scalePaintLevel;
-                    const fillFail = scalePaint === "fail" && level <= scalePaintLevel;
+                    // Fail: only the missed attempt chip jerks red; kept levels stay green.
+                    const keptAfterFail = fxLevel ?? 0;
+                    const fillFail =
+                      scalePaint === "fail" && level === scalePaintLevel;
+                    const fillOk =
+                      (scalePaint === "ok" && level <= scalePaintLevel) ||
+                      (scalePaint === "fail" &&
+                        level <= keptAfterFail &&
+                        level !== scalePaintLevel);
                     return (
                       <button
                         key={level}
