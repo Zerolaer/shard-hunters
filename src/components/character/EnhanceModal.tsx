@@ -13,6 +13,7 @@ import {
 } from "@/lib/game/enhance";
 import { formatNumber } from "@/lib/game/formulas";
 import type { Item } from "@/lib/game/types";
+import { isMaterialItem } from "@/lib/game/echoCraft";
 import { cn } from "@/lib/cn";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -36,12 +37,12 @@ function collectEnhanceable(
   const seen = new Set<string>();
   const out: Item[] = [];
   for (const it of Object.values(equipment)) {
-    if (!it || it.enhanceLevel >= MAX_ENHANCE || seen.has(it.id)) continue;
+    if (!it || isMaterialItem(it) || it.enhanceLevel >= MAX_ENHANCE || seen.has(it.id)) continue;
     seen.add(it.id);
     out.push(it);
   }
   for (const it of inventory) {
-    if (!it || it.enhanceLevel >= MAX_ENHANCE || seen.has(it.id)) continue;
+    if (!it || isMaterialItem(it) || it.enhanceLevel >= MAX_ENHANCE || seen.has(it.id)) continue;
     seen.add(it.id);
     out.push(it);
   }
@@ -114,7 +115,7 @@ export function EnhanceModal() {
     () =>
       selectedIds
         .map((id) => lookupItem(inventory, equipment, id))
-        .filter((it): it is Item => !!it && it.enhanceLevel < MAX_ENHANCE),
+        .filter((it): it is Item => !!it && !isMaterialItem(it) && it.enhanceLevel < MAX_ENHANCE),
     [selectedIds, inventory, equipment],
   );
 

@@ -9,6 +9,7 @@ import {
   MAX_FLOOR,
   MINES,
   OFFLINE_CAP_SECONDS,
+  RARITY_LABEL,
   resolvedAutoSell,
   SKILL_BY_ID,
   STAT_POINTS_PER_LEVEL,
@@ -43,6 +44,18 @@ import {
   rollRarity,
   type LootKind,
 } from "./generators";
+import {
+  consumeEchoShards,
+  countEchoShards,
+  createEchoShardStack,
+  echoChestRecipe,
+  echoDropQty,
+  echoQty,
+  echoSpendFreesSlot,
+  ECHO_SHARD_PLURAL,
+  isEchoShard,
+  isMaterialItem,
+} from "./echoCraft";
 import { migrateAssassinBuild } from "./classKit";
 import {
   DUNGEON_HALL_BY_ID,
@@ -156,7 +169,7 @@ export function flushAutoSellInventory(state: Draft, rarity: Rarity) {
   const sold: { name: string; gold: number }[] = [];
   for (let i = 0; i < state.inventory.length; i++) {
     const item = state.inventory[i];
-    if (!item || item.rarity !== rarity || isWorkshopItem(item)) continue;
+    if (!item || item.rarity !== rarity || isWorkshopItem(item) || isMaterialItem(item)) continue;
     sold.push({ name: item.name, gold: goldFromSell(item) });
     state.inventory[i] = null;
   }
@@ -175,6 +188,10 @@ export function flushAutoSellInventory(state: Draft, rarity: Rarity) {
 
 export function receiveLootItem(state: Draft, item: Item, source: "normal" | "boss" = "normal") {
   const tag = source === "boss" ? "Трофей босса" : "Добыча";
+  if (isMaterialItem(item)) {
+    grantMaterialItem(state, item, tag);
+    return;
+  }
   if (isAutoSellEnabled(state, item.rarity)) {
     const gold = goldFromSell(item);
     state.resources.gold += gold;
@@ -218,7 +235,7 @@ function worstInventorySlot(state: Draft) {
   let worst: { index: number; item: Item } | null = null;
   for (let i = 0; i < state.inventory.length; i++) {
     const item = state.inventory[i];
-    if (!item || isWorkshopItem(item)) continue;
+    if (!item || isWorkshopItem(item) || isMaterialItem(item)) continue;
     if (!worst || compareItemValue(item, worst.item) < 0) worst = { index: i, item };
   }
   return worst;
@@ -395,6 +412,84 @@ function grantLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: 
     tryPlaceLoot(state, dropBonus, monsterLevel, kind);
   }
   grantWorkshopLoot(state, dropBonus, monsterLevel, kind);
+  grantEchoShards(state, kind);
+}
+
+function grantMaterialItem(state: Draft, item: Item, tag: string) {
+  if (isEchoShard(item)) {
+    for (const existing of state.inventory) {
+      if (isEchoShard(existing)) {
+        existing.qty = echoQty(existing) + echoQty(item);
+        if (!catchupActive) {
+          pushLog(state, "loot", `${tag}: ${ECHO_SHARD_PLURAL} ×${echoQty(item)}`);
+        }
+        return;
+      }
+    }
+  }
+  const slot = firstEmptyInv(state);
+  if (slot === -1) {
+    const worst = worstInventorySlot(state);
+    if (worst) {
+      const gold = goldFromSell(worst.item);
+      state.resources.gold += gold;
+      state.inventory[worst.index] = item;
+      if (!catchupActive) {
+        pushLog(
+          state,
+          "loot",
+          `Сумка полна: ${worst.item.name} продан за ${gold} золота, ${item.name} оставлен`,
+        );
+      }
+      return;
+    }
+    if (!catchupActive) {
+      pushLog(state, "loot", `Сумка полна — ${item.name} рассыпался.`);
+    }
+    return;
+  }
+  state.inventory[slot] = item;
+  if (!catchupActive) {
+    pushLog(state, "loot", `${tag}: ${item.name}${isEchoShard(item) ? ` ×${echoQty(item)}` : ""}`);
+  }
+}
+
+function grantEchoShards(state: Draft, kind: LootKind) {
+  const dropKind = kind === "boss" ? "boss" : kind === "pvp" ? "pvp" : "trash";
+  grantMaterialItem(state, createEchoShardStack(echoDropQty(dropKind)), kind === "boss" ? "Трофей босса" : "Добыча");
+}
+
+export function craftEchoChest(state: Draft, rarity: Rarity): { ok: boolean; message: string } {
+  const recipe = echoChestRecipe(rarity);
+  if (!recipe) return { ok: false, message: "Нет такого сундука" };
+  const have = countEchoShards(state.inventory);
+  if (have < recipe.cost) {
+    return {
+      ok: false,
+      message: `Нужно ${recipe.cost} ${ECHO_SHARD_PLURAL.toLowerCase()} (есть ${have})`,
+    };
+  }
+  const empty = firstEmptyInv(state);
+  if (empty === -1 && !echoSpendFreesSlot(state.inventory, recipe.cost)) {
+    return { ok: false, message: "Сумка полна — освободите слот под предмет" };
+  }
+  if (!consumeEchoShards(state.inventory, recipe.cost)) {
+    return { ok: false, message: `Не хватает ${ECHO_SHARD_PLURAL.toLowerCase()}` };
+  }
+  const item = generateItem({
+    itemLevel: Math.max(1, state.character.level),
+    rarity: recipe.rarity,
+    preferredClass: state.character.classId,
+  });
+  const slot = firstEmptyInv(state);
+  if (slot === -1) {
+    grantMaterialItem(state, createEchoShardStack(recipe.cost), "Крафт");
+    return { ok: false, message: "Сумка полна — освободите слот под предмет" };
+  }
+  state.inventory[slot] = item;
+  const line = `Крафт: ${recipe.title} → ${item.name} [${RARITY_LABEL[item.rarity]}] ур. ${item.itemLevel}`;
+  pushLog(state, "loot", line);
+  return { ok: true, message: line };
 }
 
 function gainXp(state: Draft, amount: number) {

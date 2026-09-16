@@ -6,6 +6,7 @@ import { ArrowLeftRight, PackageOpen, Sparkles, Zap } from "lucide-react";
 import { CLASS_DEFS } from "@/lib/game/classes";
 import { RARITY_COLOR, RARITY_LABEL, SLOT_LABEL, STAT_LABEL } from "@/lib/game/constants";
 import { canWearItem } from "@/lib/game/equipment";
+import { echoQty, isMaterialItem } from "@/lib/game/echoCraft";
 import {
   formatAffix,
   isPercentAffix,
@@ -166,7 +167,63 @@ function StatBlock({
   );
 }
 
+function MaterialCard({ item, className = CARD_W }: { item: Item; className?: string }) {
+  const accent = RARITY_COLOR[item.rarity];
+  const qty = echoQty(item);
+  return (
+    <div
+      className={cn("es-tooltip overflow-hidden p-0", className)}
+      style={{
+        borderColor: `${accent}66`,
+        boxShadow: `0 28px 70px rgba(0,0,0,0.78), 0 0 0 1px ${accent}33, inset 0 1px 0 rgba(255,255,255,0.06)`,
+      }}
+    >
+      <div
+        className="relative border-b border-white/10 px-3.5 pb-3 pt-3"
+        style={{
+          background: `linear-gradient(135deg, ${accent}28 0%, rgba(8,8,10,0.2) 55%, transparent 100%)`,
+        }}
+      >
+        <div className="flex items-start gap-3">
+          <TooltipIcon item={item} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#c084fc]">Материал · крафт</div>
+            <div className="mt-1 font-display text-[16px] font-medium leading-snug tracking-tight" style={{ color: accent }}>
+              {item.name}
+            </div>
+          </div>
+        </div>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex h-6 items-center rounded-md border border-[#c084fc]/30 bg-[#c084fc]/10 px-2 text-[11px] tabular-nums text-[#e9d5ff]">
+            ×{qty}
+          </span>
+        </div>
+      </div>
+      <div className="px-2.5 py-2.5 text-[11px] leading-snug text-[#8aa0b4]">
+        Падает с любого врага. В мастерской, вкладка «Крафт», из осколков собирается сундук со случайной шмоткой вашего уровня.
+      </div>
+    </div>
+  );
+}
+
 function ItemCard({
+  item,
+  badge,
+  versus,
+  className = CARD_W,
+}: {
+  item: Item;
+  badge?: string;
+  versus?: Item | null;
+  className?: string;
+}) {
+  if (isMaterialItem(item)) {
+    return <MaterialCard item={item} className={className} />;
+  }
+  return <GearItemCard item={item} badge={badge} versus={versus} className={className} />;
+}
+
+function GearItemCard({
   item,
   badge,
   versus,
@@ -291,12 +348,58 @@ function EmptySlotCard({ slot }: { slot: EquipSlot }) {
 }
 
 export function ItemTooltip({ item, compare = true }: { item: Item; compare?: boolean }) {
+  if (isMaterialItem(item)) return <ItemCard item={item} />;
+  return <GearTooltip item={item} compare={compare} />;
+}
+
+function GearTooltip({ item, compare }: { item: Item; compare: boolean }) {
   const equipped = useGameStore((s) => s.equipment[item.slot]);
   const other = compare && equipped && equipped.id !== item.id ? equipped : undefined;
   return <ItemCard item={item} versus={other} />;
 }
 
 export function ItemInspector({
+  item,
+  previewLevel,
+}: {
+  item: Item;
+  previewLevel: number;
+}) {
+  if (isMaterialItem(item)) return <MaterialInspector item={item} />;
+  return <GearInspector item={item} previewLevel={previewLevel} />;
+}
+
+function MaterialInspector({ item }: { item: Item }) {
+  const accent = RARITY_COLOR[item.rarity];
+  const qty = echoQty(item);
+  return (
+    <div className="space-y-3">
+      <div
+        className="overflow-hidden rounded-xl border border-white/10"
+        style={{
+          borderColor: `${accent}44`,
+          background: `linear-gradient(135deg, ${accent}18 0%, rgba(8,8,10,0.4) 60%)`,
+        }}
+      >
+        <div className="flex items-start gap-3 p-3">
+          <TooltipIcon item={item} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#c084fc]">Материал · крафт</div>
+            <div className="mt-1 font-display text-lg font-medium leading-tight" style={{ color: accent }}>
+              {item.name}
+            </div>
+            <div className="mt-1.5 text-[11px] tabular-nums text-[#e9d5ff]">×{qty}</div>
+          </div>
+        </div>
+      </div>
+      <p className="text-[11px] leading-snug text-[#8aa0b4]">
+        Собирайте осколки с мобов и открывайте сундуки эха в мастерской. Уровень вещи = уровень персонажа.
+      </p>
+    </div>
+  );
+}
+
+function GearInspector({
   item,
   previewLevel,
 }: {
@@ -407,6 +510,11 @@ export function ItemInspector({
 }
 
 export function ItemCompareTooltip({ item, compare = true }: { item: Item; compare?: boolean }) {
+  if (isMaterialItem(item)) return <ItemCard item={item} />;
+  return <GearCompareTooltip item={item} compare={compare} />;
+}
+
+function GearCompareTooltip({ item, compare }: { item: Item; compare: boolean }) {
   const equipped = useGameStore((s) => s.equipment[item.slot]);
   if (!compare || (equipped && equipped.id === item.id)) {
     return <ItemCard item={item} badge={equipped?.id === item.id ? "Надето" : undefined} />;

@@ -18,6 +18,7 @@ import { SKILLS } from "./constants";
 import { itemGemStat, socketedGems } from "./gems";
 import { rand } from "./rng";
 import { BLESSING } from "./workshop";
+import { isMaterialItem, echoQty } from "./echoCraft";
 import { collectSinBonuses } from "./sin/tree";
 import { sinMasteryBonuses } from "./sin/ranks";
 import { collectTalentBonuses } from "./talents";
@@ -60,6 +61,7 @@ function statWeight(stat: AffixStat) {
 }
 
 export function itemPower(item: Item) {
+  if (isMaterialItem(item)) return 0;
   const m = itemStatMultiplier(item);
   const affix = item.affixes.reduce((s, a) => s + a.value * statWeight(a.stat), 0);
   const gems = socketedGems(item).reduce(
@@ -387,6 +389,7 @@ export function skillDamage(
 }
 
 export function goldFromSell(item: Item) {
+  if (isMaterialItem(item)) return echoQty(item) * 2;
   const rarityGold: Record<Rarity, number> = {
     common: 4,
     uncommon: 10,

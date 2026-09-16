@@ -1,4 +1,5 @@
 import { itemPower } from "./formulas";
+import { isMaterialItem, isEchoShard, mergeEchoOnto } from "./echoCraft";
 import { EQUIP_SLOTS, type EquipSlot, type Item, type Rarity } from "./types";
 
 export const INVENTORY_SORT_MODES = ["rarity", "slot", "itemLevel", "power", "name"] as const;
@@ -40,6 +41,11 @@ export function moveInventoryItem(
   if (!inBounds(inventory, fromIndex) || !inBounds(inventory, toIndex)) return;
   const from = inventory[fromIndex];
   if (!from) return;
+  const to = inventory[toIndex];
+  if (to && isEchoShard(from) && isEchoShard(to) && mergeEchoOnto(to, from)) {
+    inventory[fromIndex] = null;
+    return;
+  }
   inventory[fromIndex] = inventory[toIndex] ?? null;
   inventory[toIndex] = from;
 }
@@ -53,6 +59,7 @@ export function compactInventory(inventory: Array<Item | null>) {
 }
 
 function compareItems(a: Item, b: Item, mode: InventorySortMode) {
+  if (isMaterialItem(a) !== isMaterialItem(b)) return isMaterialItem(a) ? -1 : 1;
   switch (mode) {
     case "rarity": {
       const rarity = RARITY_RANK[a.rarity] - RARITY_RANK[b.rarity];

@@ -155,7 +155,9 @@ import {
   tickGame,
   beginTowerRun,
   leaveTowerSession,
+  craftEchoChest as craftEchoChestInTick,
 } from "@/lib/game/tick";
+import { isMaterialItem, type EchoChestRarity } from "@/lib/game/echoCraft";
 import type {
   CoreStat,
   DungeonType,
@@ -196,6 +198,7 @@ export interface GameStore extends GameData {
   unsocketGem: (itemId: string, socketIndex: number) => { ok: boolean; message: string };
   fuseGems: (rank: GemRank) => { ok: boolean; message: string };
   discardGem: (gemId: string) => void;
+  craftEchoChest: (rarity: EchoChestRarity) => { ok: boolean; message: string };
   moveInventoryItem: (fromIndex: number, toIndex: number) => void;
   sortInventory: (mode: InventorySortMode) => void;
   compactInventory: () => void;
@@ -425,6 +428,10 @@ export const useGameStore = create<GameStore>()(
         set((s) => {
           const found = findItem(s, itemId);
           if (!found || found.where !== "inventory") return;
+          if (isMaterialItem(found.item)) {
+            pushLog(s, "system", "Осколки эха разбираются в мастерской, не в руду.");
+            return;
+          }
           reclaimGems(s, found.item);
           const ore = oreFromSalvage(found.item);
           s.resources.ore += ore;
@@ -439,6 +446,7 @@ export const useGameStore = create<GameStore>()(
           for (const id of unique) {
             const found = findItem(s, id);
             if (!found || found.where !== "inventory") continue;
+            if (isMaterialItem(found.item)) continue;
             reclaimGems(s, found.item);
             const o = oreFromSalvage(found.item);
             s.resources.ore += o;
@@ -458,6 +466,10 @@ export const useGameStore = create<GameStore>()(
           const found = findItem(s, itemId);
           if (!found) return;
           const item = found.item;
+          if (isMaterialItem(item)) {
+            result = { ok: false, message: "Материал нельзя заточить" };
+            return;
+          }
           if (item.enhanceLevel >= MAX_ENHANCE) {
             result = { ok: false, message: "Достигнут предел +15" };
             return;
@@ -613,6 +625,13 @@ export const useGameStore = create<GameStore>()(
           const idx = s.gems.findIndex((g) => g.id === gemId);
           if (idx >= 0) s.gems.splice(idx, 1);
         }),
+      craftEchoChest: (rarity) => {
+        let result = { ok: false, message: "Не вышло" };
+        set((s) => {
+          result = craftEchoChestInTick(s, rarity);
+        });
+        return result;
+      },
       moveInventoryItem: (fromIndex, toIndex) =>
         set((s) => {
           moveInventorySlots(s.inventory, fromIndex, toIndex);

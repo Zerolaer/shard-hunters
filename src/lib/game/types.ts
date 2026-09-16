@@ -183,6 +183,10 @@ export interface Item {
   blessed?: boolean;
   /** Present once punched. Fixed length 1–3; a null entry is an empty socket. */
   sockets?: Array<Gem | null>;
+  /** Crafting reagent. Never equipped; stacks via `qty`. */
+  kind?: "gear" | "material";
+  materialId?: string;
+  qty?: number;
 }
 
 export interface Character {

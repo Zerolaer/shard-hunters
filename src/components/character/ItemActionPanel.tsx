@@ -13,6 +13,7 @@ import {
 import { MAX_ENHANCE } from "@/lib/game/constants";
 import { ENHANCE_SAFE_LEVELS } from "@/lib/game/enhance";
 import { canWearItem } from "@/lib/game/equipment";
+import { echoQty, isMaterialItem } from "@/lib/game/echoCraft";
 import type { EquipSlot, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -57,13 +58,15 @@ export function ItemActionPanel({
   const dismissItemPanel = useUiStore((s) => s.dismissItemPanel);
   const selectionMode = useUiStore((s) => s.selectionMode);
   const setTab = useUiStore((s) => s.setTab);
+  const setWorkshopMode = useUiStore((s) => s.setWorkshopMode);
   const [previewLevel, setPreviewLevel] = useState(0);
 
   const found = lookupSelected(inventory, equipment, selectedItemId);
   const item = found?.item ?? null;
   const inBag = found?.inBag ?? false;
-  const atMaxEnhance = !!item && item.enhanceLevel >= MAX_ENHANCE;
-  const wear = item ? canWearItem(classId, item) : { ok: false, reason: "" };
+  const material = !!item && isMaterialItem(item);
+  const atMaxEnhance = !!item && !material && item.enhanceLevel >= MAX_ENHANCE;
+  const wear = item && !material ? canWearItem(classId, item) : { ok: false, reason: "" };
   const bagActions = inBag && !selectionMode;
 
   function dismiss() {
@@ -122,9 +125,41 @@ export function ItemActionPanel({
       {item ? (
         <div className="space-y-3">
           <section>
-            <ItemInspector item={item} previewLevel={previewLevel} />
+            <ItemInspector item={item} previewLevel={material ? 0 : previewLevel} />
           </section>
 
+          {material ? (
+            <section className="space-y-2 border-t border-white/10 pt-2.5">
+              <p className="text-[11px] leading-snug text-[#8aa0b4]">
+                Материал крафта. Сложите {echoQty(item)} шт. в мастерской, чтобы открыть сундук эха на ваш уровень.
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWorkshopMode("craft");
+                    setTab("workshop");
+                  }}
+                  className={cn(ACTION_BTN, "es-btn-cyan")}
+                >
+                  <Wrench className="h-3 w-3 shrink-0" />
+                  Крафт
+                </button>
+                <button
+                  type="button"
+                  disabled={!bagActions}
+                  onClick={() => {
+                    sellItem(item.id);
+                    dismiss();
+                  }}
+                  className={ACTION_BTN}
+                >
+                  <Coins className="h-3 w-3 shrink-0" /> Продать
+                </button>
+              </div>
+            </section>
+          ) : (
+            <>
           <section className="border-t border-white/10 pt-2.5">
             <div className="es-label mb-1.5 flex items-center gap-1.5">
               <Hammer className="h-3.5 w-3.5 text-[#c4b5fd]" />
@@ -242,6 +277,8 @@ export function ItemActionPanel({
               {message ?? "\u00a0"}
             </p>
           </section>
+            </>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center gap-1.5 py-6 text-center">

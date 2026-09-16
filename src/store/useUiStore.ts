@@ -3,6 +3,7 @@ import type { InventorySortMode } from "@/lib/game/inventory";
 import type { EquipSlot, Rarity, RightTab } from "@/lib/game/types";
 
 export type MobileScreen = "combat" | "panel";
+export type WorkshopUiMode = "bless" | "socket" | "craft";
 
 interface UiState {
   tab: RightTab;
@@ -21,7 +22,9 @@ interface UiState {
   enhanceModalSeedIds: string[];
   inventoryMessage: string | null;
   showCombatLog: boolean;
+  workshopMode: WorkshopUiMode;
   setTab: (tab: RightTab) => void;
+  setWorkshopMode: (mode: WorkshopUiMode) => void;
   setMobileScreen: (screen: MobileScreen) => void;
   openMobileTab: (tab: RightTab) => void;
   /** Select / pin an item for CraftPanel + PinnedItemPanel. Pass null to dismiss. */
@@ -76,7 +79,9 @@ export const useUiStore = create<UiState>((set) => ({
   enhanceModalSeedIds: [],
   inventoryMessage: null,
   showCombatLog: false,
+  workshopMode: "bless",
   setTab: (tab) => set({ tab }),
+  setWorkshopMode: (workshopMode) => set({ workshopMode }),
   setMobileScreen: (mobileScreen) => set({ mobileScreen }),
   openMobileTab: (tab) => set({ tab, mobileScreen: "panel" }),
   selectItem: (id) => set({ selectedItemId: id }),

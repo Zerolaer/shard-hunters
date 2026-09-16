@@ -23,6 +23,7 @@ export function inferClassLock(item: Item): HunterClass | undefined {
 }
 
 export function tagItemClassLock(item: Item) {
+  if (item.kind === "material") return item;
   if (item.slot !== "weapon" && item.slot !== "offhand") {
     item.classLock = undefined;
     return item;

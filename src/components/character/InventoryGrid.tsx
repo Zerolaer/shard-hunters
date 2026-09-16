@@ -7,6 +7,7 @@ import { INVENTORY_COLS, RARITY_COLOR, RARITY_LABEL, SLOT_LABEL } from "@/lib/ga
 import { canWearItem } from "@/lib/game/equipment";
 import { INVENTORY_SORT_LABEL, INVENTORY_SORT_MODES } from "@/lib/game/inventory";
 import { GEM_RANK_ACCENT } from "@/lib/game/workshop";
+import { echoQty, isMaterialItem } from "@/lib/game/echoCraft";
 import { EQUIP_SLOTS, RARITIES, type Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -24,7 +25,7 @@ export function visibleInventoryIds(
   for (const item of inventory) {
     if (!item) continue;
     const hidden =
-      (filterSlot !== "all" && item.slot !== filterSlot) ||
+      (filterSlot !== "all" && (isMaterialItem(item) || item.slot !== filterSlot)) ||
       (filterRarity !== "all" && item.rarity !== filterRarity);
     if (!hidden) ids.push(item.id);
   }
@@ -66,9 +67,9 @@ export function InventoryGrid() {
         {inventory.map((item, idx) => {
           const hidden =
             !!item &&
-            ((filterSlot !== "all" && item.slot !== filterSlot) ||
+            ((filterSlot !== "all" && (isMaterialItem(item) || item.slot !== filterSlot)) ||
               (filterRarity !== "all" && item.rarity !== filterRarity));
-          const locked = !!item && !canWearItem(classId, item).ok;
+          const locked = !!item && !isMaterialItem(item) && !canWearItem(classId, item).ok;
           const bulkOn = selectionMode && !!item && bulkSelectedIds.includes(item.id);
           const craftOn = !selectionMode && !!item && item.id === selectedItemId;
           return (
@@ -95,7 +96,7 @@ export function InventoryGrid() {
                 else selectItem(item.id);
               }}
               onEquip={() => {
-                if (selectionMode || !item) return;
+                if (selectionMode || !item || isMaterialItem(item)) return;
                 equipItem(item.id);
               }}
               onHover={(next) => {
@@ -251,7 +252,7 @@ function InventoryCell({
           aria-hidden
         />
       ) : null}
-      {item ? (
+      {item && !isMaterialItem(item) ? (
         <div className="pointer-events-none absolute bottom-0.5 left-0.5 z-[1] flex max-w-[90%] flex-col items-start gap-px">
           <span className="rounded bg-black/65 px-0.5 text-[8px] font-medium leading-none tabular-nums text-white/85">
             {item.itemLevel}
@@ -268,6 +269,11 @@ function InventoryCell({
             </span>
           )}
         </div>
+      ) : null}
+      {item && isMaterialItem(item) ? (
+        <span className="pointer-events-none absolute bottom-0.5 right-0.5 z-[1] rounded bg-black/75 px-0.5 text-[9px] font-bold leading-none tabular-nums text-[#e9d5ff]">
+          {echoQty(item)}
+        </span>
       ) : null}
       {locked && <span className="absolute right-0 top-2.5 z-[1] text-[8px] leading-none text-[#ff5a5f]">✕</span>}
       {selectionMode && selected && (

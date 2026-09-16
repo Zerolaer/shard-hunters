@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  Anvil,
   Coins,
   Gem as GemIcon,
   Hammer,
@@ -34,15 +35,16 @@ import {
 } from "@/lib/game/workshop";
 import type { EquipSlot, Gem, GemRank, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
+import { useUiStore } from "@/store/useUiStore";
 import { ItemGlyph } from "./EquipmentDoll";
+import { EchoCraftPanel } from "./EchoCraftPanel";
+import { countEchoShards, ECHO_SHARD_PLURAL, isMaterialItem } from "@/lib/game/echoCraft";
 
 function eligibleItems(inventory: Array<Item | null>, equipment: Record<EquipSlot, Item | null>) {
   const worn = Object.values(equipment).filter((it): it is Item => !!it);
   const bag = inventory.filter((it): it is Item => !!it);
-  return [...worn, ...bag].filter((it) => it.enhanceLevel >= MAX_ENHANCE);
+  return [...worn, ...bag].filter((it) => !isMaterialItem(it) && it.enhanceLevel >= MAX_ENHANCE);
 }
-
-type WorkshopMode = "bless" | "socket";
 
 export function WorkshopPanel() {
   const inventory = useGameStore((s) => s.inventory);
@@ -56,7 +58,8 @@ export function WorkshopPanel() {
   const fuseGems = useGameStore((s) => s.fuseGems);
   const discardGem = useGameStore((s) => s.discardGem);
 
-  const [mode, setMode] = useState<WorkshopMode>("bless");
+  const mode = useUiStore((s) => s.workshopMode);
+  const setMode = useUiStore((s) => s.setWorkshopMode);
   const [targetId, setTargetId] = useState<string | null>(null);
   const [pendingSocket, setPendingSocket] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -64,6 +67,7 @@ export function WorkshopPanel() {
   const candidates = useMemo(() => eligibleItems(inventory, equipment), [inventory, equipment]);
   const item = candidates.find((it) => it.id === targetId) ?? candidates[0] ?? null;
   const sparks = resources.blessing ?? 0;
+  const echoShards = countEchoShards(inventory);
   const equippedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const it of Object.values(equipment)) if (it) ids.add(it.id);
@@ -100,15 +104,22 @@ export function WorkshopPanel() {
         <Wrench className="h-4 w-4 text-[var(--accent)]" />
         <div className="min-w-0 flex-1">
           <div className="font-display text-[14px] text-white">Мастерская</div>
-          <div className="text-[10px] text-[#8aa0b4]">+{MAX_ENHANCE} предметы · благословение и гнёзда</div>
+          <div className="text-[10px] text-[#8aa0b4]">+{MAX_ENHANCE} предметы · благословение, гнёзда и крафт</div>
         </div>
-        <span className="inline-flex items-center gap-1 text-[11px] text-[#8aa0b4]">
-          <Sparkles className="h-3.5 w-3.5 text-[#f43f5e]" />
-          {formatNumber(sparks)} {BLESSING_MATERIAL_LABEL.toLowerCase()}
-        </span>
+        {mode === "craft" ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-[#e9d5ff]">
+            <Sparkles className="h-3.5 w-3.5 text-[#c084fc]" />
+            {formatNumber(echoShards)} {ECHO_SHARD_PLURAL.toLowerCase()}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[11px] text-[#8aa0b4]">
+            <Sparkles className="h-3.5 w-3.5 text-[#f43f5e]" />
+            {formatNumber(sparks)} {BLESSING_MATERIAL_LABEL.toLowerCase()}
+          </span>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
+      <div className="grid grid-cols-3 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
         <button
           type="button"
           onClick={() => {
@@ -136,9 +147,25 @@ export function WorkshopPanel() {
         >
           <Hammer className="h-3.5 w-3.5" /> Пробить
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode("craft");
+            setPendingSocket(null);
+            setMessage(null);
+          }}
+          className={cn(
+            "es-btn h-9 text-xs",
+            mode === "craft" && "es-btn-cyan",
+          )}
+        >
+          <Anvil className="h-3.5 w-3.5" /> Крафт
+        </button>
       </div>
 
-      {candidates.length === 0 ? (
+      {mode === "craft" ? (
+        <EchoCraftPanel />
+      ) : candidates.length === 0 ? (
         <div className="es-plate flex flex-col items-center gap-1.5 py-10 text-center">
           <PackageOpen className="h-8 w-8 text-white/20" />
           <p className="text-xs text-[#8aa0b4]">Нужен предмет +{MAX_ENHANCE}</p>

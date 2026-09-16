@@ -34,7 +34,7 @@ const NAME_RULES: Array<{ match: RegExp; icons: string[] }> = [
   { match: /понож/i, icons: ["leg-armor", "greaves", "boots"] },
   { match: /след/i, icons: ["footprint", "barefoot", "boots"] },
   { match: /перстень|обруч|кольц/i, icons: ["ring", "diamond-ring"] },
-  { match: /талисман|кулон|амулет/i, icons: ["gem-necklace", "pendant", "glowing-artifact"] },
+  { match: /осколок\s*эха|осколки\s*эха/i, icons: ["crystal-shine", "glowing-artifact", "crystal-ball"] },
 ];
 
 const SLOT_FALLBACK: Record<EquipSlot, string[]> = {

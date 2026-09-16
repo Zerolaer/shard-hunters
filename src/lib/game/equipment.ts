@@ -1,7 +1,11 @@
 import { CLASS_DEFS } from "./classes";
+import { isMaterialItem } from "./echoCraft";
 import type { EquipSlot, HunterClass, Item } from "./types";
 
 export function canWearItem(classId: HunterClass | null | undefined, item: Item) {
+  if (isMaterialItem(item)) {
+    return { ok: false, reason: "Это материал для крафта, его нельзя надеть." };
+  }
   if (item.slot !== "weapon" && item.slot !== "offhand") return { ok: true, reason: "" };
   if (!item.classLock) return { ok: true, reason: "" };
   if (!classId) {

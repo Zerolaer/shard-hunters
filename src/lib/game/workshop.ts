@@ -1,4 +1,5 @@
 import { MAX_ENHANCE } from "./constants";
+import { isMaterialItem } from "./echoCraft";
 import { emptySocketCount } from "./gems";
 import type { GemRank, Item } from "./types";
 
@@ -58,6 +59,7 @@ export const GEM_BAG_SIZE = 120;
 
 export function canBlessItem(item: Item | null | undefined) {
   if (!item) return { ok: false, reason: "Выберите предмет" };
+  if (isMaterialItem(item)) return { ok: false, reason: "Материал нельзя благословить" };
   if (item.enhanceLevel < MAX_ENHANCE) return { ok: false, reason: `Нужна заточка +${MAX_ENHANCE}` };
   if (item.blessed) return { ok: false, reason: "Уже блеснут" };
   return { ok: true, reason: "" };
@@ -65,6 +67,7 @@ export function canBlessItem(item: Item | null | undefined) {
 
 export function canPunchItem(item: Item | null | undefined) {
   if (!item) return { ok: false, reason: "Выберите предмет" };
+  if (isMaterialItem(item)) return { ok: false, reason: "Материал нельзя пробить" };
   if (!item.blessed) return { ok: false, reason: "Сначала благословение" };
   if (item.sockets?.length) return { ok: false, reason: "Предмет уже пробит" };
   return { ok: true, reason: "" };
