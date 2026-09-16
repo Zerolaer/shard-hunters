@@ -13,7 +13,7 @@
  * defensive can pay off there by design — judging armour on commons is what
  * previously made endurance look like a dead stat.
  */
-import { TARGETS, REGEN } from "../src/lib/game/balance";
+import { TARGETS, REGEN, armorConstant } from "../src/lib/game/balance";
 import { statsOf } from "../src/lib/game/formulas";
 import { build, gearRungForSpot, run } from "./harness";
 import type { CoreStat } from "../src/lib/game/types";
@@ -102,7 +102,7 @@ for (const level of LEVELS) {
         Math.round(d.maxHp).toString().padStart(10),
         Math.round(d.defense).toString().padStart(9),
         // Armour mitigation against a same-level attacker.
-        `${((d.defense / (d.defense + 88 + 11.5 * level)) * 100).toFixed(0)}%`.padStart(10),
+        `${((d.defense / (d.defense + armorConstant(level))) * 100).toFixed(0)}%`.padStart(10),
         `${bmPct.toFixed(0)}%`.padStart(6),
         `${(mean((r) => r.incomingPerSec) * 100).toFixed(2)}%`.padStart(13),
         (Number.isFinite(survive) ? survive.toFixed(0) : "∞").padStart(10),

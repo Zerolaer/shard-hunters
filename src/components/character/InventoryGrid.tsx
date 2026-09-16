@@ -5,6 +5,7 @@ import { ArrowUpDown, ListFilter } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { INVENTORY_COLS, RARITY_COLOR, RARITY_LABEL, SLOT_LABEL } from "@/lib/game/constants";
 import { canWearItem } from "@/lib/game/equipment";
+import { itemPower } from "@/lib/game/formulas";
 import { INVENTORY_SORT_LABEL, INVENTORY_SORT_MODES } from "@/lib/game/inventory";
 import { GEM_RANK_ACCENT } from "@/lib/game/workshop";
 import { echoQty, isMaterialItem } from "@/lib/game/echoCraft";
@@ -13,6 +14,18 @@ import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { ItemGlyph } from "./EquipmentDoll";
 import { ItemHoverTooltip } from "./ItemTooltip";
+
+/** Live itemPower vs same-slot equipped piece — same metric as tooltips / equip choice. */
+function inventoryCompareVsEquipped(
+  item: Item,
+  equipped: Item | null,
+): "better" | "worse" | null {
+  if (isMaterialItem(item) || !equipped || equipped.id === item.id) return null;
+  const delta = itemPower(item) - itemPower(equipped);
+  if (delta > 0) return "better";
+  if (delta < 0) return "worse";
+  return null;
+}
 
 const INV_DRAG_PREFIX = "inv:";
 
@@ -199,6 +212,8 @@ function InventoryCell({
   onDragEndCell: () => void;
 }) {
   const canDrag = !selectionMode && !!item;
+  const equipped = useGameStore((s) => (item && !isMaterialItem(item) ? s.equipment[item.slot] : null));
+  const vsEquipped = item ? inventoryCompareVsEquipped(item, equipped) : null;
 
   return (
     <div
@@ -223,7 +238,15 @@ function InventoryCell({
         onHover({ item, rect: e.currentTarget.getBoundingClientRect() });
       }}
       onMouseLeave={() => onHover(null)}
-      aria-label={item ? item.name : `Пустая ячейка ${index + 1}`}
+      aria-label={
+        item
+          ? vsEquipped === "better"
+            ? `${item.name}, лучше надетого`
+            : vsEquipped === "worse"
+              ? `${item.name}, хуже надетого`
+              : item.name
+          : `Пустая ячейка ${index + 1}`
+      }
       className={cn(
         "es-slot es-inv-cell relative flex aspect-square w-full items-center justify-center overflow-visible",
         selected && (selectionMode ? "is-bulk" : "is-selected"),
@@ -245,16 +268,9 @@ function InventoryCell({
           <ItemGlyph item={item} compact />
         </div>
       )}
-      {item ? (
-        <span
-          className="pointer-events-none absolute right-0.5 top-0.5 z-[1] h-1.5 w-1.5 rounded-full shadow-[0_0_4px_currentColor]"
-          style={{ background: RARITY_COLOR[item.rarity], color: RARITY_COLOR[item.rarity] }}
-          aria-hidden
-        />
-      ) : null}
       {item && !isMaterialItem(item) ? (
         <div className="pointer-events-none absolute bottom-0.5 left-0.5 z-[1] flex max-w-[90%] flex-col items-start gap-px">
-          <span className="rounded bg-black/65 px-0.5 text-[8px] font-medium leading-none tabular-nums text-white/85">
+          <span className="item-level-badge rounded px-0.5 text-[10px] font-semibold leading-none tabular-nums text-white/90">
             {item.itemLevel}
           </span>
           {!!item.sockets?.length && (
@@ -269,6 +285,18 @@ function InventoryCell({
             </span>
           )}
         </div>
+      ) : null}
+      {vsEquipped ? (
+        <span
+          className={cn(
+            "inv-cmp-arrow pointer-events-none absolute bottom-1 right-1 z-[1] flex h-[1.05rem] w-[1.05rem] items-center justify-center rounded-sm text-[13px] font-black leading-none",
+            vsEquipped === "better" ? "is-better" : "is-worse",
+          )}
+          title={vsEquipped === "better" ? "Лучше надетого" : "Хуже надетого"}
+          aria-hidden
+        >
+          {vsEquipped === "better" ? "▲" : "▼"}
+        </span>
       ) : null}
       {item && isMaterialItem(item) ? (
         <span className="pointer-events-none absolute bottom-0.5 right-0.5 z-[1] rounded bg-black/75 px-0.5 text-[9px] font-bold leading-none tabular-nums text-[#e9d5ff]">

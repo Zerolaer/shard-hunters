@@ -412,6 +412,95 @@ body {
   -webkit-backdrop-filter: blur(16px);
 }
 
+/* —— primary game menu (under header) —— */
+
+.game-nav-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.game-nav-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.game-nav-tab {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 0;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0.45rem 0.35rem 0.55rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #a8a29e;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.15;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.game-nav-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.game-nav-tab:focus-visible {
+  outline: none;
+  color: #fff;
+}
+
+.game-nav-tab.is-active {
+  color: #fff;
+}
+
+.game-nav-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 0;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+
+.game-nav-tab svg {
+  opacity: 0.75;
+}
+
+.game-nav-tab.is-active svg {
+  color: var(--accent);
+  opacity: 1;
+}
+
+@media (max-width: 1280px) {
+  .game-nav-tab {
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 10px;
+    min-height: 44px;
+    padding: 0.35rem 0.2rem 0.45rem;
+  }
+
+  .game-nav-tab span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 .rp-tab {
   position: relative;
   display: flex;
@@ -484,7 +573,7 @@ body {
   left: 0;
   right: 0;
   top: 0;
-  background: rgba(4, 6, 10, 0.78);
+  background: rgba(4, 6, 10, 0.62);
 }
 
 .skill-cd-ready {
@@ -492,8 +581,19 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(180deg, rgba(46, 229, 157, 0.08), rgba(46, 229, 157, 0.38));
-  box-shadow: 0 -2px 10px rgba(46, 229, 157, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.combat-debuff-slot {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.combat-debuff-slot.is-dense {
+  min-height: 18px;
 }
 
 .skill-rank {
@@ -521,11 +621,151 @@ body {
 
 .world-map-bg {
   background:
-    radial-gradient(ellipse at 18% 70%, rgba(52, 211, 153, 0.16), transparent 42%),
-    radial-gradient(ellipse at 48% 28%, rgba(168, 85, 247, 0.14), transparent 40%),
-    radial-gradient(ellipse at 78% 62%, rgba(34, 211, 238, 0.12), transparent 38%),
-    radial-gradient(ellipse at 90% 18%, rgba(251, 191, 36, 0.1), transparent 36%),
+    radial-gradient(ellipse at 18% 70%, rgba(255, 255, 255, 0.06), transparent 42%),
+    radial-gradient(ellipse at 48% 28%, rgba(46, 229, 157, 0.08), transparent 40%),
+    radial-gradient(ellipse at 78% 62%, rgba(228, 195, 106, 0.07), transparent 38%),
+    radial-gradient(ellipse at 90% 18%, rgba(255, 255, 255, 0.04), transparent 36%),
     linear-gradient(180deg, rgba(18, 22, 28, 0.4), rgba(6, 8, 10, 0.85));
+}
+
+/* Zone tiles on the farm map */
+.farm-zone {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 10, 12, 0.85);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.farm-zone:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.farm-zone.is-active {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.farm-zone.is-farming {
+  border-color: rgba(228, 195, 106, 0.45);
+}
+
+.farm-zone-tex {
+  position: absolute;
+  inset: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+.farm-zone-tex::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 40% 30%, var(--zone-accent, rgba(255, 255, 255, 0.12)), transparent 65%);
+}
+
+/* Tower climb canvas */
+.tower-canvas {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  background:
+    linear-gradient(180deg, rgba(20, 12, 16, 0.92) 0%, rgba(8, 8, 10, 0.96) 100%);
+}
+
+.tower-floor-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s ease;
+}
+
+.tower-floor-row.is-current {
+  background: rgba(251, 113, 133, 0.12);
+  border-color: rgba(251, 113, 133, 0.22);
+}
+
+.tower-floor-row.is-cleared {
+  opacity: 0.55;
+}
+
+.tower-swords {
+  display: inline-flex;
+  animation: tower-clash 1.1s ease-in-out infinite;
+}
+
+@keyframes tower-clash {
+  0%,
+  100% {
+    transform: rotate(-8deg) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: rotate(8deg) scale(1.08);
+    opacity: 1;
+  }
+}
+
+/* Mine shaft visual */
+.mine-shaft {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(165deg, rgba(16, 14, 12, 0.95), rgba(8, 8, 10, 0.98));
+}
+
+.mine-shaft-tex {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.4;
+  background-image:
+    repeating-linear-gradient(
+      -18deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 255, 255, 0.02) 10px,
+      rgba(255, 255, 255, 0.02) 12px
+    ),
+    radial-gradient(ellipse at 50% 0%, var(--mine-accent, rgba(228, 195, 106, 0.14)), transparent 55%);
+}
+
+.mine-shaft.is-active {
+  border-color: rgba(228, 195, 106, 0.4);
+  box-shadow: inset 0 0 40px rgba(228, 195, 106, 0.06);
+}
+
+.mine-slot-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mine-slot-pip.is-filled {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.mine-slot-pip.is-player {
+  background: var(--accent);
+  border-color: var(--accent-2);
+  box-shadow: 0 0 8px rgba(46, 229, 157, 0.45);
 }
 
 .sin-hot-badge {
@@ -857,6 +1097,23 @@ body {
   line-height: 1;
 }
 
+/* Better / worse vs equipped — readable at a glance without garish glow */
+.inv-cmp-arrow {
+  background: rgba(0, 0, 0, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
+}
+
+.inv-cmp-arrow.is-better {
+  color: #3ee0a0;
+  border: 1px solid rgba(62, 224, 160, 0.45);
+}
+
+.inv-cmp-arrow.is-worse {
+  color: #ff6b70;
+  border: 1px solid rgba(255, 90, 95, 0.4);
+}
+
 .es-enh-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -864,6 +1121,8 @@ body {
 }
 
 .es-enh-chip {
+  position: relative;
+  overflow: hidden;
   height: 22px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -872,6 +1131,12 @@ body {
   font-size: 10px;
   font-weight: 600;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    border-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .es-enh-chip.is-actual {
@@ -885,8 +1150,49 @@ body {
   background: rgba(251, 191, 36, 0.1);
 }
 
+/* Success fill: levels 1 → achieved paint green in sequence */
+.es-enh-chip.is-fill-ok {
+  border-color: rgba(74, 222, 128, 0.65);
+  color: #bbf7d0;
+  background: rgba(74, 222, 128, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.25);
+  animation: enh-chip-ok 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.es-enh-chip.is-fill-fail {
+  border-color: rgba(248, 113, 113, 0.7);
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.3);
+  animation: enh-chip-fail 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes enh-chip-ok {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes enh-chip-fail {
+  0% {
+    transform: scale(1.08);
+  }
+  40% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* —— enhance ceremony —— */
-/* FX lives on absolute layers inside fixed boxes — never resize in-flow parents. */
+/* FX lives on absolute layers inside fixed boxes — never resize in-flow parents.
+   Prefer transform/opacity (GPU) over filter to cut jank. */
 
 .es-enhance-split {
   display: grid;
@@ -916,11 +1222,12 @@ body {
 
 .es-enhance-stage {
   min-height: 0;
+  transition: box-shadow 0.28s ease, border-color 0.28s ease;
 }
 
 .es-enhance-stage.is-charge {
-  border-color: rgba(196, 181, 253, 0.35);
-  box-shadow: inset 0 0 40px rgba(196, 181, 253, 0.08);
+  border-color: rgba(228, 195, 106, 0.35);
+  box-shadow: inset 0 0 40px rgba(228, 195, 106, 0.08);
 }
 
 .es-enhance-stage.is-success {
@@ -950,86 +1257,80 @@ body {
 }
 
 .enhance-charge {
-  animation: enhance-charge 0.42s ease-in-out;
+  animation: enhance-charge 0.4s cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 .es-enhance-fx.enhance-charge {
   box-shadow:
-    inset 0 0 0 1px rgba(196, 181, 253, 0.45),
-    0 0 22px rgba(196, 181, 253, 0.35);
+    inset 0 0 0 1px rgba(228, 195, 106, 0.45),
+    0 0 18px rgba(228, 195, 106, 0.28);
 }
 
 .enhance-success {
-  animation: enhance-success 0.78s ease-out;
+  animation: enhance-success 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .enhance-fail {
-  animation: enhance-fail 0.9s ease-out;
+  animation: enhance-fail 0.72s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .es-enhance-burst {
   border-radius: inherit;
   background:
-    radial-gradient(circle at 50% 45%, rgba(251, 191, 36, 0.55) 0%, transparent 42%),
-    radial-gradient(circle at 30% 60%, rgba(74, 222, 128, 0.35) 0%, transparent 36%),
-    radial-gradient(circle at 70% 55%, rgba(196, 181, 253, 0.4) 0%, transparent 38%);
-  animation: enhance-sparkle 0.78s ease-out forwards;
+    radial-gradient(circle at 50% 45%, rgba(251, 191, 36, 0.5) 0%, transparent 42%),
+    radial-gradient(circle at 30% 60%, rgba(74, 222, 128, 0.32) 0%, transparent 36%),
+    radial-gradient(circle at 70% 55%, rgba(228, 195, 106, 0.35) 0%, transparent 38%);
+  animation: enhance-sparkle 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 
 /* Quick enhance — BAM BAM BAM */
 .enhance-charge.is-quick,
 .is-quick.enhance-charge {
-  animation-duration: 0.07s;
+  animation-duration: 0.06s;
 }
 
 .enhance-success.is-quick,
 .is-quick.enhance-success {
-  animation-duration: 0.11s;
+  animation-duration: 0.1s;
 }
 
 .enhance-fail.is-quick,
 .is-quick.enhance-fail {
-  animation-duration: 0.11s;
+  animation-duration: 0.1s;
 }
 
 .es-enhance-burst.is-quick {
-  animation-duration: 0.11s;
+  animation-duration: 0.1s;
 }
 
 @keyframes enhance-charge {
   0% {
     transform: scale(1);
-    filter: brightness(1);
+    opacity: 1;
   }
-  45% {
-    transform: scale(1.06);
-    filter: brightness(1.25);
+  50% {
+    transform: scale(1.055);
+    opacity: 1;
   }
   100% {
     transform: scale(1.02);
-    filter: brightness(1.1);
+    opacity: 1;
   }
 }
 
 @keyframes enhance-success {
   0% {
     transform: scale(1);
-    filter: brightness(1) saturate(1);
     opacity: 1;
   }
-  25% {
-    transform: scale(1.1);
-    filter: brightness(1.55) saturate(1.35);
+  30% {
+    transform: scale(1.08);
     opacity: 1;
-  }
-  55% {
-    transform: scale(1.04);
-    filter: brightness(1.25) saturate(1.15);
   }
   100% {
     transform: scale(1);
-    filter: brightness(1) saturate(1);
     opacity: 1;
   }
 }
@@ -1037,43 +1338,37 @@ body {
 @keyframes enhance-fail {
   0%,
   100% {
-    transform: translateX(0) rotate(0deg);
-    filter: brightness(1);
+    transform: translate3d(0, 0, 0);
   }
-  12% {
-    transform: translateX(-4px) rotate(-1.5deg);
-    filter: brightness(1.15);
+  15% {
+    transform: translate3d(-3px, 0, 0);
   }
-  24% {
-    transform: translateX(4px) rotate(1.5deg);
+  30% {
+    transform: translate3d(3px, 0, 0);
   }
-  36% {
-    transform: translateX(-3px) rotate(-1deg);
-  }
-  48% {
-    transform: translateX(3px) rotate(1deg);
+  45% {
+    transform: translate3d(-2px, 0, 0);
   }
   60% {
-    transform: translateX(-2px);
-    filter: brightness(0.85);
+    transform: translate3d(2px, 0, 0);
   }
-  72% {
-    transform: translateX(2px);
+  75% {
+    transform: translate3d(-1px, 0, 0);
   }
 }
 
 @keyframes enhance-sparkle {
   0% {
     opacity: 0;
-    transform: scale(0.6);
+    transform: scale(0.72);
   }
-  30% {
+  28% {
     opacity: 1;
-    transform: scale(1.1);
+    transform: scale(1.06);
   }
   100% {
     opacity: 0;
-    transform: scale(1.35);
+    transform: scale(1.28);
   }
 }
 
@@ -1426,9 +1721,37 @@ body {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* Rarity wash sits under the art and peeks from the cell floor */
 .item-glyph-glow {
   z-index: 0;
-  filter: blur(1px);
+  filter: blur(2.5px);
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.item-glyph-art {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+}
+
+.item-enhance-badge {
+  background: rgba(0, 0, 0, 0.78);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 3px rgba(0, 0, 0, 0.75);
+}
+
+.item-level-badge {
+  background: rgba(0, 0, 0, 0.78);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .item-blessed {
@@ -1597,7 +1920,8 @@ body {
   button,
   .es-btn,
   .es-tab,
-  .rp-tab {
+  .rp-tab,
+  .game-nav-tab {
     touch-action: manipulation;
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
   }
@@ -1632,5 +1956,263 @@ body {
 
   .sin-gem:hover:not(.pointer-events-none) {
     transform: none;
+  }
+}
+
+/* —— bless ritual —— */
+
+.bless-altar {
+  transition: box-shadow 0.35s ease, border-color 0.35s ease;
+}
+
+.bless-altar.is-charge {
+  border-color: rgba(244, 63, 94, 0.4);
+  box-shadow: inset 0 0 48px rgba(244, 63, 94, 0.12);
+}
+
+.bless-altar.is-success {
+  border-color: rgba(74, 222, 128, 0.5);
+  box-shadow: inset 0 0 56px rgba(74, 222, 128, 0.14);
+}
+
+.bless-altar.is-fail {
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow: inset 0 0 48px rgba(248, 113, 113, 0.12);
+}
+
+.bless-charge-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 2px solid rgba(244, 63, 94, 0.55);
+  animation: bless-ring 0.72s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+@keyframes bless-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.bless-cta-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(
+    90deg,
+    rgba(244, 63, 94, 0.35),
+    rgba(228, 195, 106, 0.45)
+  );
+  pointer-events: none;
+}
+
+.bless-cta-fill.is-running {
+  animation: bless-cta-charge 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes bless-cta-charge {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* —— farm world map canvas —— */
+
+.farm-map-root {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.farm-world-map {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(ellipse at 20% 70%, rgba(228, 195, 106, 0.06), transparent 42%),
+    radial-gradient(ellipse at 72% 28%, rgba(46, 229, 157, 0.05), transparent 40%),
+    linear-gradient(165deg, #12161c 0%, #0a0c10 55%, #08090b 100%);
+}
+
+/* Direct child only — Lucide icons inside the drawer / zoom controls are also
+   <svg> and must not inherit full-bleed absolute sizing. */
+.farm-world-map > svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.farm-world-map > svg.is-panning {
+  cursor: grab;
+}
+
+.farm-world-map > svg:active {
+  cursor: grabbing;
+}
+
+.farm-map-zoom {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.farm-map-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 16, 0.72);
+  color: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.farm-map-zoom-btn:hover:not(:disabled) {
+  background: rgba(228, 195, 106, 0.12);
+  border-color: rgba(228, 195, 106, 0.28);
+  color: var(--color-amber);
+}
+
+.farm-map-zoom-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.farm-map-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 2;
+  pointer-events: none;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.farm-spot-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(4, 4, 6, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+
+.farm-spot-scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.farm-spot-drawer {
+  position: absolute;
+  z-index: 14;
+  top: 10px;
+  left: 10px;
+  bottom: 10px;
+  width: min(22rem, calc(100% - 20px));
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  transform: translateX(calc(-100% - 18px));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.farm-spot-drawer.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.farm-spot-drawer-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.farm-spot-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.farm-spot-drawer-footer {
+  flex-shrink: 0;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.farm-map-node {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.farm-map-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.farm-map-node.is-locked {
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+@media (max-width: 1023px) {
+  .farm-spot-drawer {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-width: none;
   }
 }

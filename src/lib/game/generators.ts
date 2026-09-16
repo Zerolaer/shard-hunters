@@ -141,14 +141,29 @@ export function generateMonster(opts: {
   floor: number;
   isBoss: boolean;
   danger?: number;
+  /** Override location base level (arena bosses, special encounters). */
+  baseLevel?: number;
+  threat?: number;
+  bmScale?: number;
 }): Monster {
   const loc = LOCATION_BY_ID[opts.locationId] ?? LOCATIONS[0]!;
   const danger = opts.danger ?? 1;
-  const threat = loc.threat ?? 1;
-  const level = monsterLevelOf(loc.baseLevel, opts.floor, opts.isBoss);
-  const hp = monsterHp(level, opts.floor, opts.isBoss, danger, threat);
-  const attack = monsterAttack(level, opts.floor, opts.isBoss, danger, threat);
-  const defense = monsterDefense(level, opts.floor, opts.isBoss);
+  const threat = opts.threat ?? loc.threat ?? 1;
+  const level = monsterLevelOf(opts.baseLevel ?? loc.baseLevel, opts.floor, opts.isBoss);
+  /**
+   * `bmScale` raises the zone's required BM without changing level. If combat
+   * stats ignore it, a 100k-BM hunter walks into a 140k-BM square and farms
+   * level-curve trash — the classic "required BM is a lie" failure. Scale HP
+   * and attack with the budget; defense climbs slower so armour stays a choice.
+   */
+  const bmScale = Math.max(1, opts.bmScale ?? loc.bmScale ?? 1);
+  // ATK scales a bit under the BM gate so threat+danger don't double-count;
+  // HP tracks the gate so equal-BM pulls still last a real fight.
+  const atkScale = Math.pow(bmScale, 0.82);
+  const defScale = Math.pow(bmScale, 0.5);
+  const hp = Math.round(monsterHp(level, opts.floor, opts.isBoss, danger, threat) * bmScale);
+  const attack = Math.round(monsterAttack(level, opts.floor, opts.isBoss, danger, threat) * atkScale);
+  const defense = Math.round(monsterDefense(level, opts.floor, opts.isBoss) * defScale);
   const xp = monsterXpReward(level, opts.floor, opts.isBoss);
   const gold = monsterGoldReward(level, opts.isBoss, rand(0.88, 1.14));
   const shards = monsterShardReward(level, opts.isBoss, rand(0.85, 1.18));

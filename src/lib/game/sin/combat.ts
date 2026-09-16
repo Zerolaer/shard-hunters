@@ -1,7 +1,9 @@
 import { bmOffenseMult, expectedBm, gcdLength, SIN_SKILL_SCALE } from "../balance";
+import { bossRecommendedBm, BOSS_DEF_BY_ID, isBossLocationId } from "../bosses";
 import { healPlayer, pushFloater, pushLog, registerMiss } from "../combatFx";
 import { rollAccuracyHit, rollHit, statsOf } from "../formulas";
 import { FARM_SPOT_BY_ID } from "../spots";
+import { isTowerLocationId, towerRecommendedBm } from "../tower";
 import type { DerivedStats, GameData, SinSkillId } from "../types";
 import { resolveSinSkill, resolveSinOpts } from "./resolve";
 import type { ResolvedSinSkill } from "./types";
@@ -26,7 +28,20 @@ function currentDanger(state: Draft, monster: { isBoss: boolean; isPvp: boolean 
 function sinDealtMult(state: Draft, derived: DerivedStats) {
   const monster = state.combat.monster;
   if (!monster || monster.isPvp || state.combat.mode === "pvp") return 1;
-  const required = FARM_SPOT_BY_ID[state.combat.spotId]?.requiredBm ?? expectedBm(state.character.level);
+  let required: number;
+  if (isTowerLocationId(state.combat.locationId)) {
+    required = towerRecommendedBm(Math.max(1, state.tower?.floor ?? 1));
+  } else if (isBossLocationId(state.combat.locationId)) {
+    const def = state.bosses?.active?.defId
+      ? BOSS_DEF_BY_ID[state.bosses.active.defId]
+      : null;
+    required = def
+      ? bossRecommendedBm(def)
+      : (FARM_SPOT_BY_ID[state.combat.spotId]?.requiredBm ?? expectedBm(state.character.level));
+  } else {
+    required =
+      FARM_SPOT_BY_ID[state.combat.spotId]?.requiredBm ?? expectedBm(state.character.level);
+  }
   return bmOffenseMult(derived.powerScore, required);
 }
 

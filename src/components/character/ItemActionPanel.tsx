@@ -6,6 +6,7 @@ import {
   Hammer,
   PackageOpen,
   Recycle,
+  Scale,
   Shirt,
   Wrench,
   X,
@@ -53,13 +54,13 @@ export function ItemActionPanel({
   const equipItem = useGameStore((s) => s.equipItem);
   const unequipSlot = useGameStore((s) => s.unequipSlot);
   const classId = useGameStore((s) => s.character.classId);
-  const message = useUiStore((s) => s.enhanceMessage);
   const openEnhanceModal = useUiStore((s) => s.openEnhanceModal);
   const dismissItemPanel = useUiStore((s) => s.dismissItemPanel);
   const selectionMode = useUiStore((s) => s.selectionMode);
   const setTab = useUiStore((s) => s.setTab);
   const setWorkshopMode = useUiStore((s) => s.setWorkshopMode);
   const [previewLevel, setPreviewLevel] = useState(0);
+  const [compareDefaults, setCompareDefaults] = useState(false);
 
   const found = lookupSelected(inventory, equipment, selectedItemId);
   const item = found?.item ?? null;
@@ -81,6 +82,7 @@ export function ItemActionPanel({
       selectedItemId,
     );
     setPreviewLevel(current?.item.enhanceLevel ?? 0);
+    setCompareDefaults(false);
   }, [selectedItemId]);
 
   // Item vanished (sold / salvaged)
@@ -106,9 +108,9 @@ export function ItemActionPanel({
   }, [selectedItemId, onDismiss]);
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cn("flex h-full min-h-0 flex-1 flex-col", className)}>
       {dismissible && (
-        <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-2.5 pb-2 pt-2.5">
           <div className="es-label flex-1">Предмет</div>
           <button
             type="button"
@@ -123,16 +125,84 @@ export function ItemActionPanel({
       )}
 
       {item ? (
-        <div className="space-y-3">
-          <section>
-            <ItemInspector item={item} previewLevel={material ? 0 : previewLevel} />
-          </section>
+        <>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 [scrollbar-gutter:stable]">
+            <section>
+              <ItemInspector
+                item={item}
+                previewLevel={material ? 0 : previewLevel}
+                compareDefaults={!material && compareDefaults}
+              />
+            </section>
 
-          {material ? (
-            <section className="space-y-2 border-t border-white/10 pt-2.5">
+            {material ? (
               <p className="text-[11px] leading-snug text-[#8aa0b4]">
                 Материал крафта. Сложите {echoQty(item)} шт. в мастерской, чтобы открыть сундук эха на ваш уровень.
               </p>
+            ) : (
+              <section className="border-t border-white/10 pt-2.5">
+                <div className="es-label mb-1.5 flex items-center gap-1.5">
+                  <Hammer className="h-3.5 w-3.5 text-[#e4c36a]" />
+                  Превью заточки
+                  {previewLevel !== item.enhanceLevel && !compareDefaults && (
+                    <span className="rounded bg-[#fbbf24]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#fbbf24]">
+                      +{previewLevel}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCompareDefaults((v) => !v)}
+                    className={cn(
+                      "es-btn es-inv-control ml-auto h-7 px-2 text-[10px]",
+                      compareDefaults && "es-btn-cyan",
+                    )}
+                    title="Сравнить базовые статы без заточки, благословения и камней"
+                  >
+                    <Scale className="h-3 w-3" />
+                    Сравнить дэфолт
+                  </button>
+                </div>
+                {!compareDefaults ? (
+                  <div className="es-enh-grid">
+                    {Array.from({ length: MAX_ENHANCE + 1 }, (_, level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => setPreviewLevel(level)}
+                        className={cn(
+                          "es-enh-chip",
+                          level === item.enhanceLevel && "is-actual",
+                          level === previewLevel && "is-preview",
+                        )}
+                        style={
+                          (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
+                            ? { borderColor: "#4ade8099", color: "#4ade80" }
+                            : undefined
+                        }
+                        aria-label={`Превью +${level}`}
+                        title={
+                          (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
+                            ? `+${level} — безопасный уровень: ниже него заточка не откатится`
+                            : level === item.enhanceLevel
+                              ? `Текущая заточка +${level}`
+                              : `Превью +${level}`
+                        }
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] leading-snug text-[#8aa0b4]">
+                    Без заточки, благословения и камней — честное сравнение базы с надетым слотом.
+                  </p>
+                )}
+              </section>
+            )}
+          </div>
+
+          <section className="shrink-0 border-t border-white/10 px-2.5 pb-2 pt-2">
+            {material ? (
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
@@ -157,131 +227,77 @@ export function ItemActionPanel({
                   <Coins className="h-3 w-3 shrink-0" /> Продать
                 </button>
               </div>
-            </section>
-          ) : (
-            <>
-          <section className="border-t border-white/10 pt-2.5">
-            <div className="es-label mb-1.5 flex items-center gap-1.5">
-              <Hammer className="h-3.5 w-3.5 text-[#c4b5fd]" />
-              Превью заточки
-              {previewLevel !== item.enhanceLevel && (
-                <span className="rounded bg-[#fbbf24]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#fbbf24]">
-                  +{previewLevel}
-                </span>
-              )}
-            </div>
-            <div className="es-enh-grid">
-              {Array.from({ length: MAX_ENHANCE + 1 }, (_, level) => (
-                <button
-                  key={level}
-                  type="button"
-                  onClick={() => setPreviewLevel(level)}
-                  className={cn(
-                    "es-enh-chip",
-                    level === item.enhanceLevel && "is-actual",
-                    level === previewLevel && "is-preview",
-                  )}
-                  style={
-                    (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
-                      ? { borderColor: "#4ade8099", color: "#4ade80" }
-                      : undefined
-                  }
-                  aria-label={`Превью +${level}`}
-                  title={
-                    (ENHANCE_SAFE_LEVELS as readonly number[]).includes(level) && level > 0
-                      ? `+${level} — безопасный уровень: ниже него заточка не откатится`
-                      : level === item.enhanceLevel
-                        ? `Текущая заточка +${level}`
-                        : `Превью +${level}`
-                  }
-                >
-                  {level}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="space-y-2 border-t border-white/10 pt-2.5">
-            <div className="grid grid-cols-2 gap-1.5">
-              {atMaxEnhance ? (
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                {atMaxEnhance ? (
+                  <button
+                    type="button"
+                    onClick={() => setTab("workshop")}
+                    className={ACTION_BTN}
+                    title="Максимум заточки. Благословение и гнёзда под камни — в Мастерской"
+                  >
+                    <Wrench className="h-3 w-3 shrink-0" />
+                    Мастерская
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => openEnhanceModal([item.id])}
+                    className={cn(ACTION_BTN, "es-btn-cyan")}
+                  >
+                    <Hammer className="h-3 w-3 shrink-0" />
+                    Заточить
+                  </button>
+                )}
+                {inBag ? (
+                  <button
+                    type="button"
+                    onClick={() => equipItem(item.id)}
+                    disabled={!bagActions || !wear.ok}
+                    className={cn(ACTION_BTN, "es-btn-amber")}
+                    title={!bagActions ? undefined : wear.ok ? undefined : wear.reason}
+                  >
+                    <Shirt className="h-3 w-3 shrink-0" /> Надеть
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => unequipSlot(item.slot)}
+                    className={ACTION_BTN}
+                  >
+                    <Shirt className="h-3 w-3 shrink-0" /> Снять
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => setTab("workshop")}
+                  disabled={!bagActions}
+                  onClick={() => {
+                    sellItem(item.id);
+                    dismiss();
+                  }}
                   className={ACTION_BTN}
-                  title="Максимум заточки. Благословение и гнёзда под камни — в Мастерской"
+                  title={!inBag ? "Сначала снимите предмет" : undefined}
                 >
-                  <Wrench className="h-3 w-3 shrink-0" />
-                  Мастерская
+                  <Coins className="h-3 w-3 shrink-0" /> Продать
                 </button>
-              ) : (
                 <button
                   type="button"
-                  onClick={() => openEnhanceModal([item.id])}
-                  className={cn(ACTION_BTN, "es-btn-cyan")}
-                >
-                  <Hammer className="h-3 w-3 shrink-0" />
-                  Заточить
-                </button>
-              )}
-              {inBag ? (
-                <button
-                  type="button"
-                  onClick={() => equipItem(item.id)}
-                  disabled={!bagActions || !wear.ok}
-                  className={cn(ACTION_BTN, "es-btn-amber")}
-                  title={!bagActions ? undefined : wear.ok ? undefined : wear.reason}
-                >
-                  <Shirt className="h-3 w-3 shrink-0" /> Надеть
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => unequipSlot(item.slot)}
+                  disabled={!bagActions}
+                  onClick={() => {
+                    salvageItem(item.id);
+                    dismiss();
+                  }}
                   className={ACTION_BTN}
+                  title={!inBag ? "Сначала снимите предмет" : undefined}
                 >
-                  <Shirt className="h-3 w-3 shrink-0" /> Снять
+                  <Recycle className="h-3 w-3 shrink-0" /> Разобрать
                 </button>
-              )}
-              <button
-                type="button"
-                disabled={!bagActions}
-                onClick={() => {
-                  sellItem(item.id);
-                  dismiss();
-                }}
-                className={ACTION_BTN}
-                title={!inBag ? "Сначала снимите предмет" : undefined}
-              >
-                <Coins className="h-3 w-3 shrink-0" /> Продать
-              </button>
-              <button
-                type="button"
-                disabled={!bagActions}
-                onClick={() => {
-                  salvageItem(item.id);
-                  dismiss();
-                }}
-                className={ACTION_BTN}
-                title={!inBag ? "Сначала снимите предмет" : undefined}
-              >
-                <Recycle className="h-3 w-3 shrink-0" /> Разобрать
-              </button>
-            </div>
-            <p
-              className={cn(
-                "min-h-[1rem] text-xs text-white/70",
-                !message && "invisible",
-              )}
-              aria-hidden={!message}
-            >
-              {message ?? "\u00a0"}
-            </p>
+              </div>
+            )}
           </section>
-            </>
-          )}
-        </div>
+        </>
       ) : (
-        <div className="flex flex-col items-center gap-1.5 py-6 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-2.5 py-6 text-center">
           <PackageOpen className="h-8 w-8 text-white/20" />
           <p className="text-xs text-[#8aa0b4]">Выберите предмет</p>
         </div>

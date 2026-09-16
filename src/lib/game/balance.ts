@@ -121,11 +121,27 @@ export function gcdLength(kind: "offensive" | "utility", skillHaste: number) {
  */
 export const SIN_SKILL_SCALE = 0.4;
 
-export const ARMOR_FLAT = 88;
-export const ARMOR_PER_ATTACKER_LEVEL = 11.5;
+/**
+ * Armour soft-cap target vs an *invested* same-level kit.
+ *
+ * The old flat `88 + 11.5×L` constant stopped tracking gear defense around
+ * level 25, so mid/late kits were mitigating 55–78% of every hit. Death,
+ * endurance and every heal became decorative — which is exactly the
+ * "unkillable at 100k BM" failure mode. Anchoring K to reference invested
+ * defense keeps same-level mitigation inside TARGETS' 15–28% band for the
+ * whole 1–100 curve; heavier tanks still climb toward ~40%, glass sits ~12%.
+ */
+export const ARMOR_TARGET_MITIGATION = 0.22;
 
+/**
+ * Effective armour constant against an attacker of the given level.
+ * Computed from the invested reference defense at that level so the curve
+ * cannot drift away from gear again when affixes/enhance change.
+ */
 export function armorConstant(attackerLevel: number) {
-  return ARMOR_FLAT + ARMOR_PER_ATTACKER_LEVEL * Math.max(1, attackerLevel);
+  const def = referenceInvestedDefense(Math.max(1, attackerLevel));
+  const t = ARMOR_TARGET_MITIGATION;
+  return Math.max(1, def * ((1 - t) / t));
 }
 
 /** Same-level mitigation stays ~15–28% as the game grows. */
@@ -260,20 +276,24 @@ export const MONSTER = {
    * against each other: raise `hpPerLevel` and lower `hpPowCoef` to lift early
    * levels without touching level 100. Re-fit with `npm run balance:parity`
    * whenever a player-side multiplier changes.
+   *
+   * Re-fit 2026-09: invested (matchSpotBm≈1) kits were melting trash in 2–4 s
+   * once armour stopped deleting monster damage. Raised the HP curve so
+   * equal-BM commons land in the 5–8 s target again; power term carries late.
    */
-  hpFlat: 120,
-  hpPerLevel: 110,
-  hpPow: 1.66,
-  hpPowCoef: 5.5,
+  hpFlat: 140,
+  hpPerLevel: 100,
+  hpPow: 1.82,
+  hpPowCoef: 13.5,
   /**
    * Early attack kept soft on commons (danger≈1) so HP cost lands in TARGETS
    * at 1–16. Contested tiers skip the softener — apex pressure is dangerAtkExp.
    */
-  atkFlat: 3.5,
-  atkPerLevel: 4.0,
+  atkFlat: 3.4,
+  atkPerLevel: 3.85,
   /** Softens commons below this level toward `atkEarlyFloor`. */
-  atkEarlyUntil: 30,
-  atkEarlyFloor: 0.36,
+  atkEarlyUntil: 40,
+  atkEarlyFloor: 0.22,
   defFlat: 6,
   defPerLevel: 2.05,
   /**
@@ -315,14 +335,13 @@ export const MONSTER = {
   trashIntervalMin: 1.62,
   trashIntervalMax: 1.95,
   /**
-   * attack *= danger ^ this, so apex hits harder instead of only soaking.
-   *
-   * Above 1 so that contested squares scale pressure faster than they scale HP,
-   * which is what makes armour and endurance worth buying. Commons has danger
-   * 1.0 and is therefore untouched by this exponent — early commons pressure
-   * uses `atkEarlyFloor` instead.
+   * attack *= danger ^ effectiveExp. Base is soft so early apex is contested
+   * rather than a wipe; the level slope restores late equal-BM apex to the
+   * 22–30 s / 25–35% kill-cost band after the armour fix.
    */
-  dangerAtkExp: 2.75,
+  dangerAtkExp: 2.5,
+  dangerAtkPivot: 24,
+  dangerAtkLevelSlope: 0.82,
   /**
    * HP *= danger ^ effectiveExp. Mild base + shallow level slope so early apex
    * does not soak forever while mid/late cost can still reach 25–35%.
@@ -359,6 +378,15 @@ export function dangerHpExponent(level: number) {
   );
 }
 
+/** Contested-tier attack exponent: soft early apex, firmer mid/late. */
+export function dangerAtkExponent(level: number) {
+  const L = Math.max(1, level);
+  return Math.max(
+    1.2,
+    MONSTER.dangerAtkExp + (MONSTER.dangerAtkLevelSlope * (L - MONSTER.dangerAtkPivot)) / 70,
+  );
+}
+
 /** Level-scaled boss HP multiplier on top of the flat bossHp dial. */
 export function bossHpLevelMult(level: number) {
   const L = Math.max(1, level);
@@ -389,7 +417,7 @@ export function monsterHp(level: number, floor: number, isBoss: boolean, danger:
 export function monsterAttack(level: number, floor: number, isBoss: boolean, danger: number, threat: number) {
   const L = Math.max(1, level);
   const d = Math.max(0.5, danger);
-  const atkDanger = Math.pow(d, MONSTER.dangerAtkExp);
+  const atkDanger = Math.pow(d, dangerAtkExponent(L));
   // Bosses never take the commons early softener — their pressure is the point.
   const early = isBoss ? 1 : monsterAtkEarlyMult(L, d);
   const base = (MONSTER.atkFlat + L * MONSTER.atkPerLevel) * early;
@@ -586,11 +614,15 @@ export const LOCATION_THREAT = {
  * game; that is intentional.
  *
  * Rough invested targets (expectedBm; live kits roll ≈+10–25% luck):
- *   L10 ≈ 2.5k   L40 ≈ 11k   L60 ≈ 20k   L80 ≈ 28k   L100 ≈ 40k
+ *   L10 ≈ 2.5k   L40 ≈ 11k   L60 ≈ 20k   L80 ≈ 29k   L100 ≈ 41k
  * Open-world commons ask ~82% of that; dungeon halls use rich-tier × threat
  * (≈1.3–1.6× open commons). L100 content needs ~3.5–4× the BM of L40.
  *
  * Live powerScore uses the same weights, so the number you see IS the curve.
+ *
+ * Armour K tracks referenceInvestedDefense so same-level mitigation stays
+ * ~22% across 1–100. BM-gated zones (`bmScale`) multiply monster HP/ATK in
+ * generateMonster — required BM is no longer an empty gate.
  */
 export const BM = {
   /**
@@ -800,6 +832,26 @@ function averageImplicits(L: number, rarity: Rarity) {
 }
 
 /**
+ * Defense of the invested reference hunter at level L. Shared by the BM curve
+ * and the armour constant so the two cannot drift apart.
+ */
+export function referenceInvestedDefense(level: number) {
+  const L = Math.max(1, level);
+  const points = 5 * (L - 1);
+  const { rarity, enhance } = investedGearProfile(L);
+  const gearMult = enhanceMultiplier(enhance);
+  const affix = averageAffixes(L, rarity);
+  const impl = averageImplicits(L, rarity);
+  const end = 8 + points * TYPICAL_SPLIT.endurance + affix.endurance * gearMult;
+  return (
+    end * PLAYER.defPerEnd +
+    L * PLAYER.defPerLevel +
+    impl.defense * gearMult +
+    affix.defense * gearMult
+  );
+}
+
+/**
  * Combat power of the invested reference hunter at a level. Mirrors deriveStats
  * term for term (including enhance on printed gear). If you change a stat
  * formula there, change it here too, then run `npm run balance:bm`.
@@ -854,7 +906,9 @@ function typicalCore(level: number, withGear: boolean) {
 
   const attack = PLAYER.atkBase + (str + talentStat) * PLAYER.atkPerStr + L * PLAYER.atkPerLevel + impl.attack + affix.attack;
   const maxHp = PLAYER.hpBase + L * PLAYER.hpPerLevel + end * PLAYER.hpPerEnd + impl.health + affix.health;
-  const defense = end * PLAYER.defPerEnd + L * PLAYER.defPerLevel + impl.defense + affix.defense;
+  const defense = withGear
+    ? referenceInvestedDefense(L)
+    : end * PLAYER.defPerEnd + L * PLAYER.defPerLevel + impl.defense + affix.defense;
   const critChance = Math.min(PLAYER.critCap, PLAYER.critBase + agi * PLAYER.critPerAgi + affix.critChance);
   const critDamage = PLAYER.critDmgBase + agi * PLAYER.critDmgPerAgi + affix.critDamage;
   const attackInterval = Math.max(

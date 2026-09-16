@@ -123,6 +123,14 @@ export const REGIONS: LocationRegion[] = [
     mapX: 97,
     mapY: 60,
   },
+  {
+    id: "aftervoid",
+    name: "Послепустота",
+    blurb: "За затмением. Здесь взвешивают уже не судьбу — а вес.",
+    accent: "#f87171",
+    mapX: 88,
+    mapY: 88,
+  },
 ];
 
 const THREAT: Record<LocationKind, number> = LOCATION_THREAT;
@@ -517,8 +525,9 @@ export const LOCATIONS: LocationDef[] = [
    * sovereign arc for any strong level-95 character.
    *
    * Scales sit on the *invested* expectedBm curve: abyss ≈ blessed epic / soft
-   * mythic, throne ≈ mythic +15 + gems. Do not re-inflate these if the base
-   * curve already models enhance — old 3.3/4.2 assumed uncommon+0.
+   * mythic, throne ≈ mythic +15 + gems. Monster HP/ATK also take `bmScale` in
+   * generateMonster (ATK^0.82), so the gate is not empty calories. Threat stays
+   * near the kind default — do not stack a second pressure mult on top.
    */
   loc({
     id: "abyss-rift",
@@ -526,7 +535,12 @@ export const LOCATIONS: LocationDef[] = [
     blurb: "Мир порвался вдоль шва. То, что лезет наружу, старше охоты.",
     minLevel: 100,
     kind: "elite",
-    threat: 1.55,
+    /**
+     * Pressure budget is `bmScale` (applied to monster HP/ATK in generateMonster).
+     * Keep threat near the elite default — stacking 1.55 threat × 1.75 bmScale
+     * made equal-BM pulls twice as deadly as the gate promised.
+     */
+    threat: 1.2,
     bmScale: 1.75,
     rarityBias: 0.45,
     bmGated: true,
@@ -541,7 +555,7 @@ export const LOCATIONS: LocationDef[] = [
     blurb: "Трон под чёрным солнцем. Здесь взвешивают, а не убивают.",
     minLevel: 100,
     kind: "boss",
-    threat: 1.85,
+    threat: 1.28,
     bmScale: 2.35,
     rarityBias: 0.9,
     bmGated: true,
@@ -549,6 +563,73 @@ export const LOCATIONS: LocationDef[] = [
     bossName: "Затмённый Соверен",
     baseLevel: 112,
     regionId: "unmade",
+  }),
+  /**
+   * Aftervoid — BM ladder past throne for mythic/+15/gem dumps.
+   * Threat stays near boss/elite defaults; pressure budget is bmScale
+   * (see generateMonster). Target commons→apex bands:
+   *   crown-scar ≈ 170–290k · null-cathedral ≈ 280–480k
+   *   eternal-wound ≈ 500–840k · ash-of-thrones ≈ 860k–1.45M
+   */
+  loc({
+    id: "crown-scar",
+    name: "Шрам Короны",
+    blurb: "Трещина, где корона впервые треснула. Осколки ещё помнят вес.",
+    minLevel: 100,
+    kind: "elite",
+    threat: 1.22,
+    bmScale: 3.8,
+    rarityBias: 1.05,
+    bmGated: true,
+    mobNames: ["Шрамовый страж", "Обломок венца", "Клинок трещины", "Пепельный герольд"],
+    bossName: "Первый Шрам",
+    baseLevel: 125,
+    regionId: "aftervoid",
+  }),
+  loc({
+    id: "null-cathedral",
+    name: "Нулевой Собор",
+    blurb: "Храм без бога. Молитвы здесь считают в боевой мощи.",
+    minLevel: 100,
+    kind: "elite",
+    threat: 1.24,
+    bmScale: 5.5,
+    rarityBias: 1.2,
+    bmGated: true,
+    mobNames: ["Нулевой клирик", "Хор без голоса", "Столп пустоты", "Исповедник веса"],
+    bossName: "Архитектор Нуля",
+    baseLevel: 140,
+    regionId: "aftervoid",
+  }),
+  loc({
+    id: "eternal-wound",
+    name: "Вечная Рана",
+    blurb: "Рана мира, которая не закрывается. Сюда идут уже не охотники — а вес.",
+    minLevel: 100,
+    kind: "boss",
+    threat: 1.3,
+    bmScale: 8,
+    rarityBias: 1.4,
+    bmGated: true,
+    mobNames: ["Кровавый шов", "Страж раны", "Эхо удара", "Незаживший"],
+    bossName: "Сердце Раны",
+    baseLevel: 155,
+    regionId: "aftervoid",
+  }),
+  loc({
+    id: "ash-of-thrones",
+    name: "Пепел Престолов",
+    blurb: "Могила всех корон. Apex требует около миллиона БМ.",
+    minLevel: 100,
+    kind: "boss",
+    threat: 1.34,
+    bmScale: 12,
+    rarityBias: 1.65,
+    bmGated: true,
+    mobNames: ["Пепельный соверен", "Тронный прах", "Корона без имени", "Последний вес"],
+    bossName: "Пепельный Престол",
+    baseLevel: 175,
+    regionId: "aftervoid",
   }),
 ];
 
@@ -588,9 +669,9 @@ export function locationEntryBm(location: Pick<LocationDef, "baseLevel" | "kind"
  * Deepest zone the player can farm right now.
  *
  * Classic map: pick by highest reachable minLevel (monotonic with the list).
- * Unmade (abyss / throne) share minLevel 100 with void-heart — among equal
+ * Unmade / Aftervoid share minLevel 100 with void-heart — among equal
  * floors, prefer the highest recommended BM the player's powerScore still
- * clears at 0.9×. Level alone never opens Unmade early.
+ * clears at 0.9×. Level alone never opens BM-gated endgame early.
  */
 export function recommendedLocationId(level: number, powerScore?: number) {
   let best = LOCATIONS[0]!;

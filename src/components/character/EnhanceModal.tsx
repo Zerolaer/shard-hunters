@@ -21,8 +21,8 @@ import { ItemGlyph } from "./EquipmentDoll";
 
 type FxKind = "idle" | "charge" | "success" | "fail";
 
-const SLOW_MS = { charge: 420, success: 780, fail: 920, resourceFail: 700 } as const;
-const QUICK_MS = { charge: 70, success: 110, fail: 110, resourceFail: 90 } as const;
+const SLOW_MS = { charge: 400, success: 720, fail: 740, resourceFail: 650 } as const;
+const QUICK_MS = { charge: 60, success: 100, fail: 100, resourceFail: 80 } as const;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -92,6 +92,9 @@ export function EnhanceModal() {
   const [fx, setFx] = useState<FxKind>("idle");
   const [fxNonce, setFxNonce] = useState(0);
   const [fxLevel, setFxLevel] = useState<number | null>(null);
+  /** Scale-bar paint: success fills 1→level green; fail paints red up to attempted. */
+  const [scalePaint, setScalePaint] = useState<"ok" | "fail" | null>(null);
+  const [scalePaintLevel, setScalePaintLevel] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
   const cancelRef = useRef(false);
   const pendingCloseRef = useRef(false);
@@ -192,6 +195,8 @@ export function EnhanceModal() {
     setFx("idle");
     setFxNonce(0);
     setFxLevel(null);
+    setScalePaint(null);
+    setScalePaintLevel(0);
     setActiveId(null);
     cancelRef.current = false;
     pendingCloseRef.current = false;
@@ -248,6 +253,8 @@ export function EnhanceModal() {
     setFx("idle");
     setFxNonce(0);
     setFxLevel(null);
+    setScalePaint(null);
+    setScalePaintLevel(0);
 
     const timing = () => (quickRef.current ? QUICK_MS : SLOW_MS);
     const queue = [...selectedIds];
@@ -266,10 +273,12 @@ export function EnhanceModal() {
           break;
         }
 
+        const attemptFrom = item.enhanceLevel;
         setActiveId(itemId);
         setFx("charge");
         setFxNonce((n) => n + 1);
         setFxLevel(null);
+        setScalePaint(null);
         await sleep(timing().charge);
         if (cancelRef.current) break;
 
@@ -284,9 +293,13 @@ export function EnhanceModal() {
         if (res.ok) {
           setFx("success");
           setFxLevel(levelNow);
+          setScalePaint("ok");
+          setScalePaintLevel(levelNow);
         } else if (res.message.includes("Недостаточно")) {
           setFx("fail");
           setFxLevel(levelNow);
+          setScalePaint("fail");
+          setScalePaintLevel(Math.min(MAX_ENHANCE, attemptFrom + 1));
           cancelRef.current = true;
           setFxNonce((n) => n + 1);
           await sleep(timing().resourceFail);
@@ -294,6 +307,8 @@ export function EnhanceModal() {
         } else {
           setFx("fail");
           setFxLevel(levelNow);
+          setScalePaint("fail");
+          setScalePaintLevel(Math.min(MAX_ENHANCE, attemptFrom + 1));
         }
         setFxNonce((n) => n + 1);
 
@@ -305,6 +320,8 @@ export function EnhanceModal() {
     setFx("idle");
     setFxNonce(0);
     setFxLevel(null);
+    setScalePaint(null);
+    setScalePaintLevel(0);
     setActiveId(null);
     setRunning(false);
     const shouldClose = pendingCloseRef.current;
@@ -335,8 +352,8 @@ export function EnhanceModal() {
         className="es-modal relative z-10 flex h-[min(90vh,36rem)] w-full max-w-3xl flex-col overflow-hidden max-lg:h-[min(92dvh,40rem)]"
       >
         <div className="flex shrink-0 items-start gap-3 border-b border-white/10 px-4 py-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#c4b5fd]/25 bg-[#c4b5fd]/10">
-            <Hammer className="h-5 w-5 text-[#c4b5fd]" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#e4c36a]/25 bg-[#e4c36a]/10">
+            <Hammer className="h-5 w-5 text-[#e4c36a]" />
           </div>
           <div className="min-w-0 flex-1">
             <p id={titleId} className="font-display text-lg font-semibold tracking-tight text-white">
@@ -458,7 +475,7 @@ export function EnhanceModal() {
               quickEnhance && "is-quick",
             )}
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_18%,rgba(196,181,253,0.12),transparent_58%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_18%,rgba(228,195,106,0.1),transparent_58%)]" />
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="es-label mb-1.5 flex shrink-0 items-center justify-between gap-2">
                 <span>Выбрано</span>
@@ -621,10 +638,12 @@ export function EnhanceModal() {
                     Быстро
                   </button>
                 </div>
-                <div className="es-enh-grid">
+                <div className="es-enh-grid" aria-live="polite">
                   {Array.from({ length: MAX_ENHANCE }, (_, i) => {
                     const level = i + 1;
                     const disabled = running || level <= minCurrent;
+                    const fillOk = scalePaint === "ok" && level <= scalePaintLevel;
+                    const fillFail = scalePaint === "fail" && level <= scalePaintLevel;
                     return (
                       <button
                         key={level}
@@ -633,11 +652,21 @@ export function EnhanceModal() {
                         onClick={() => setTargetLevel(level)}
                         className={cn(
                           "es-enh-chip",
-                          level === targetLevel && "is-preview",
+                          level === targetLevel && !scalePaint && "is-preview",
                           selectedItems.length === 1 &&
                             selectedItems[0].enhanceLevel === level &&
+                            !scalePaint &&
                             "is-actual",
+                          fillOk && "is-fill-ok",
+                          fillFail && "is-fill-fail",
                         )}
+                        style={
+                          fillOk || fillFail
+                            ? {
+                                animationDelay: `${(level - 1) * (quickEnhance ? 8 : 22)}ms`,
+                              }
+                            : undefined
+                        }
                         aria-label={`Цель +${level}`}
                       >
                         {level}

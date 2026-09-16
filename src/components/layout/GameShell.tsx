@@ -6,6 +6,7 @@ import { ClassPicker } from "@/components/auth/ClassPicker";
 import { CombatPanel } from "@/components/combat/CombatPanel";
 import { BuffTray } from "@/components/layout/BuffTray";
 import { GameHeader } from "@/components/layout/GameHeader";
+import { GameNavBar } from "@/components/layout/GameNavBar";
 import { MobileDock } from "@/components/layout/MobileDock";
 import { OfflineBanner } from "@/components/layout/OfflineBanner";
 import { RightTabs } from "@/components/layout/RightTabs";
@@ -136,6 +137,7 @@ export function GameShell() {
       ) : (
         <>
           <GameHeader />
+          <GameNavBar />
           <OfflineBanner />
           <main
             className={cn(

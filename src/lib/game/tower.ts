@@ -1,7 +1,10 @@
-import { monsterLevelOf, spotRequiredBm } from "./balance";
+import {
+  monsterLevelOf,
+  spotRequiredBm,
+} from "./balance";
 import { LOCATION_BY_ID, type LocationDef } from "./locations";
 import { FARM_SPOT_BY_ID, type FarmSpotDef } from "./spots";
-import type { GemRank, Rarity, TowerState } from "./types";
+import type { GemRank, Monster, Rarity, TowerState } from "./types";
 
 export const TOWER_LOCATION_ID = "dung-tower";
 export const TOWER_SPOT_ID = "dung-tower-0-0";
@@ -45,9 +48,49 @@ export function isTowerMilestone(floor: number) {
   return floor > 0 && floor % TOWER_MILESTONE === 0;
 }
 
-/** Compress infinite floors onto the open-world floor curve so TTK stays a climb, not a brick wall. */
+/**
+ * Compress infinite floors onto a soft level/floor curve for the *base*
+ * monster profile (level, boss flag, floorPower). Real fight difficulty comes
+ * from {@link applyTowerGuardianPower}, which scales HP/ATK up to the floor's
+ * recommended BM — otherwise deep floors show 100k+ BM while spawning a
+ * softcapped floor-20 sponge that a mid-game kit one-shots.
+ */
 export function towerCombatFloor(floor: number) {
-  return 1 + (Math.max(1, floor) - 1) * 0.55;
+  const n = Math.max(1, floor);
+  return 1 + Math.pow(n - 1, 0.78) * 0.55;
+}
+
+/**
+ * How far the floor's recommended BM sits above the softcapped combat profile.
+ * Floor 1 ≈ 1; floor 100 ≈ 10×; floor 200 ≈ 30×.
+ */
+export function towerPowerGap(floor: number) {
+  const n = Math.max(1, floor);
+  const combatFloor = towerCombatFloor(n);
+  const level = monsterLevelOf(TOWER_BASE_LEVEL, combatFloor, true);
+  const baseline = spotRequiredBm(level, "hot", "boss");
+  return towerRecommendedBm(n) / Math.max(1, baseline);
+}
+
+/**
+ * Scale a softcapped tower guardian so its combat power matches the BM the UI
+ * advertises. Attack tracks the gap at least 1:1 — Assassin lifesteal and short
+ * tower TTKs otherwise leave the player at full HP while the tooltip screams
+ * "103k BM". HP stays just under linear so deep floors are phases, not sponges.
+ */
+export function applyTowerGuardianPower(monster: Monster, floor: number) {
+  const gap = Math.max(0.5, towerPowerGap(floor));
+  // Equal-BM (~1.0): clear in ~8–18s with chip damage.
+  // Half-BM (~0.5): death — the old softcap let 48k BM one-shot a "103k" floor.
+  const hpMult = Math.pow(gap, 0.85);
+  const atkMult = Math.pow(gap, 1.16);
+  const defMult = Math.pow(gap, 0.55);
+  monster.maxHp = Math.max(1, Math.round(monster.maxHp * hpMult));
+  monster.hp = monster.maxHp;
+  monster.attack = Math.max(1, Math.round(monster.attack * atkMult));
+  monster.defense = Math.max(1, Math.round(monster.defense * defMult));
+  monster.attackInterval = Math.max(1.25, Math.min(monster.attackInterval, 1.5));
+  return monster;
 }
 
 export function towerBossName(floor: number) {
@@ -63,11 +106,19 @@ export function towerMilestoneRarity(floor: number): Rarity {
   return "uncommon";
 }
 
+/**
+ * Infinite BM climb. Softcapped combat floor alone cannot carry deep floors —
+ * see {@link applyTowerGuardianPower}. Rough recommended BM:
+ *   F50≈25k · F100≈90k · F210≈490k · F250≈740k · F300≈1.3M.
+ */
 export function towerRecommendedBm(floor: number) {
-  const combatFloor = towerCombatFloor(floor);
+  const n = Math.max(1, floor);
+  const combatFloor = towerCombatFloor(n);
   const level = monsterLevelOf(TOWER_BASE_LEVEL, combatFloor, true);
-  const threat = 1.08 + Math.min(0.55, (Math.max(1, floor) - 1) * 0.008);
-  return Math.max(1, Math.round(spotRequiredBm(level, "hot", "normal") * threat));
+  const base = spotRequiredBm(level, "hot", "normal");
+  const climb = Math.pow(1 + (n - 1) * 0.028, 1.55);
+  const threat = 1.1 + Math.min(0.9, (n - 1) * 0.004);
+  return Math.max(1, Math.round(base * climb * threat));
 }
 
 export function towerComfortBm(floor: number) {
@@ -86,9 +137,11 @@ export interface TowerClearBonus {
 export function towerClearBonus(floor: number): TowerClearBonus {
   const n = Math.max(1, floor);
   const milestone = isTowerMilestone(n);
-  const gold = Math.round((22 + n * 16) * (milestone ? 4.2 : 1));
-  const ore = Math.round(n * (milestone ? 1.8 : 0.4));
-  const shards = Math.round((8 + n * 3.2) * (milestone ? 3.4 : 1));
+  /** Deep floors pay more — overboost climb must stay a faucet, not a sponge. */
+  const depth = 1 + Math.max(0, n - 100) * 0.006;
+  const gold = Math.round((22 + n * 16) * depth * (milestone ? 4.2 : 1));
+  const ore = Math.round(n * depth * (milestone ? 1.8 : 0.4));
+  const shards = Math.round((8 + n * 3.2) * depth * (milestone ? 3.4 : 1));
   if (!milestone) {
     return { gold, ore, shards, sparks: 0, itemRarity: null, gemRank: null };
   }
@@ -97,7 +150,7 @@ export function towerClearBonus(floor: number): TowerClearBonus {
     gold,
     ore: Math.max(6, ore),
     shards,
-    sparks: 1 + Math.floor(n / TOWER_MILESTONE),
+    sparks: 1 + Math.floor(n / TOWER_MILESTONE) + Math.floor(Math.max(0, n - 150) / 50),
     itemRarity: rarity,
     gemRank: rarity,
   };

@@ -1,11 +1,11 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { useShallow } from "zustand/react/shallow";
 import {
   PROFILE_PERSIST_NAME,
   clearSaveBackup,
-  createAccountStorage,
+  createThrottledPersistStorage,
   flushCloudSave,
   getSessionAccountId,
 } from "@/lib/auth/accounts";
@@ -84,6 +84,21 @@ import {
   towerComfortBm,
   towerRecommendedBm,
 } from "@/lib/game/tower";
+import {
+  activeWorldWindow,
+  BOSS_DEF_BY_ID,
+  BOSS_MIN_LEVEL,
+  bossComfortBm,
+  bossRecommendedBm,
+  canEnterPersonal,
+  emptyBossesState,
+  fieldSpawnKey,
+  hasKilledField,
+  hasKilledWorld,
+  isBossLocationId,
+  isFieldSpawnAlive,
+  normalizeBossesState,
+} from "@/lib/game/bosses";
 import { emptySinBuild, emptySinCombat } from "@/lib/game/sin/state";
 import { enhanceCost, enhanceLevelAfterFail, enhanceSuccessChance } from "@/lib/game/enhance";
 import {
@@ -155,12 +170,15 @@ import {
   tickGame,
   beginTowerRun,
   leaveTowerSession,
+  beginBossFight,
+  leaveBossSession,
   craftEchoChest as craftEchoChestInTick,
 } from "@/lib/game/tick";
 import { isMaterialItem, type EchoChestRarity } from "@/lib/game/echoCraft";
 import type {
   CoreStat,
   DungeonType,
+  BossKind,
   EquipSlot,
   GameData,
   GemRank,
@@ -223,6 +241,7 @@ export interface GameStore extends GameData {
   enterDungeon: (hallId: string) => { ok: boolean; message: string };
   leaveDungeon: () => { ok: boolean; message: string };
   enterTower: () => { ok: boolean; message: string };
+  enterBoss: (kind: BossKind, defId: string) => { ok: boolean; message: string };
   donateToGuild: (kind: "gold" | "ore", amount: number) => void;
   createGuild: (name: string, tag: string, joinMode: GuildJoinMode, motd: string) => { ok: boolean; message: string };
   leaveGuild: () => { ok: boolean; message: string };
@@ -247,6 +266,10 @@ function syncGuildPlayerName(state: GameData) {
 }
 
 function leaveInstanceIfNeeded(s: GameData) {
+  if (s.bosses?.active || isBossLocationId(s.combat.locationId)) {
+    leaveBossSession(s, "Вы покинули арену боссов.");
+    return;
+  }
   if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
     leaveTowerSession(s, "Вы покинули Башню. Этаж сохранён — можно вернуться.");
     return;
@@ -1188,6 +1211,10 @@ export const useGameStore = create<GameStore>()(
             result = { ok: false, message: "Сначала покиньте Башню" };
             return;
           }
+          if (s.bosses?.active || isBossLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Сначала покиньте арену боссов" };
+            return;
+          }
           const now = Date.now();
           const budget = dungeonBudgetRemainingMs(s.dungeon, hall.type, now);
           if (budget <= 0) {
@@ -1249,6 +1276,11 @@ export const useGameStore = create<GameStore>()(
       leaveDungeon: () => {
         let result = { ok: false, message: "Вы не в подземелье" };
         set((s) => {
+          if (s.bosses?.active || isBossLocationId(s.combat.locationId)) {
+            leaveBossSession(s, "Вы покинули арену боссов.");
+            result = { ok: true, message: "Выход с арены боссов." };
+            return;
+          }
           if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
             leaveTowerSession(s, "Вы покинули Башню. Этаж сохранён — можно вернуться.");
             result = { ok: true, message: "Выход из Башни. Прогресс этажей сохранён." };
@@ -1276,6 +1308,10 @@ export const useGameStore = create<GameStore>()(
             result = { ok: false, message: "Сначала покиньте зал подземелья" };
             return;
           }
+          if (s.bosses?.active || isBossLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Сначала покиньте арену боссов" };
+            return;
+          }
           if (s.tower.active || isTowerLocationId(s.combat.locationId)) {
             result = { ok: false, message: "Вы уже в Башне" };
             return;
@@ -1292,6 +1328,83 @@ export const useGameStore = create<GameStore>()(
           result = {
             ok: true,
             message: `Башня Испытаний · этаж ${floor}.${bmWarn}`,
+          };
+          pushLog(s, "system", result.message);
+        });
+        return result;
+      },
+      enterBoss: (kind, defId) => {
+        let result = { ok: false, message: "Босс недоступен" };
+        set((s) => {
+          if (!s.bosses) s.bosses = emptyBossesState();
+          s.bosses = normalizeBossesState(s.bosses);
+          if (s.character.level < BOSS_MIN_LEVEL) {
+            result = { ok: false, message: `Нужен ${BOSS_MIN_LEVEL} уровень` };
+            return;
+          }
+          if (s.dungeon?.active) {
+            result = { ok: false, message: "Сначала покиньте зал подземелья" };
+            return;
+          }
+          if (s.tower?.active || isTowerLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Сначала покиньте Башню" };
+            return;
+          }
+          if (s.bosses.active || isBossLocationId(s.combat.locationId)) {
+            result = { ok: false, message: "Вы уже на арене боссов" };
+            return;
+          }
+          const def = BOSS_DEF_BY_ID[defId];
+          if (!def || def.kind !== kind) {
+            result = { ok: false, message: "Неизвестный босс" };
+            return;
+          }
+          if (s.character.level < def.minLevel) {
+            result = { ok: false, message: `Нужен ${def.minLevel} уровень` };
+            return;
+          }
+          const now = Date.now();
+          let spawnKey = "";
+          if (kind === "world") {
+            const win = activeWorldWindow(now);
+            if (!win || win.boss.id !== def.id) {
+              result = { ok: false, message: "Мировой босс сейчас недоступен" };
+              return;
+            }
+            if (hasKilledWorld(s.bosses, win.spawnKey)) {
+              result = { ok: false, message: "Вы уже победили этого босса в этом окне" };
+              return;
+            }
+            spawnKey = win.spawnKey;
+          } else if (kind === "field") {
+            if (!isFieldSpawnAlive(now)) {
+              result = { ok: false, message: "Полевые боссы появятся в начале часа" };
+              return;
+            }
+            const key = fieldSpawnKey(now);
+            if (hasKilledField(s.bosses, def.id, key)) {
+              result = { ok: false, message: "Уже побеждён в этом часе" };
+              return;
+            }
+            spawnKey = key;
+          } else {
+            if (!canEnterPersonal(s.bosses, def)) {
+              result = { ok: false, message: "Сначала пройдите предыдущую главу" };
+              return;
+            }
+            spawnKey = `personal:${def.chapter ?? 1}`;
+          }
+          const derived = statsOf(s);
+          const rec = bossRecommendedBm(def);
+          const comfort = bossComfortBm(def);
+          beginBossFight(s, { kind, defId: def.id, spawnKey });
+          const bmWarn =
+            derived.powerScore < comfort
+              ? ` · БМ слабо (рек. ${formatFullDigits(rec)}) — нужен буст`
+              : "";
+          result = {
+            ok: true,
+            message: `${def.name}. Рек. БМ ${formatFullDigits(rec)}.${bmWarn}`,
           };
           pushLog(s, "system", result.message);
         });
@@ -1448,11 +1561,14 @@ export const useGameStore = create<GameStore>()(
     })),
     {
       name: PROFILE_PERSIST_NAME,
-      storage: createJSONStorage(() => createAccountStorage(PROFILE_PERSIST_NAME)),
+      storage: createThrottledPersistStorage(PROFILE_PERSIST_NAME),
       skipHydration: true,
-      version: 8,
+      version: 9,
       migrate: (persisted, version) => {
         const p = persisted as GameData;
+        if (version < 9) {
+          p.bosses = emptyBossesState();
+        }
         if (version < 8) {
           p.tower = emptyTowerState();
         }
@@ -1524,6 +1640,7 @@ export const useGameStore = create<GameStore>()(
         oreAcc: s.oreAcc,
         dungeon: normalizeDungeonState(s.dungeon ?? emptyDungeonState()),
         tower: normalizeTowerState(s.tower ?? emptyTowerState()),
+        bosses: normalizeBossesState(s.bosses ?? emptyBossesState()),
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<GameData>;
@@ -1579,6 +1696,7 @@ export const useGameStore = create<GameStore>()(
           inventory: normalizeInventory(p.inventory) ?? current.inventory,
           dungeon: normalizeDungeonState(p.dungeon ?? emptyDungeonState()),
           tower: normalizeTowerState(p.tower ?? current.tower ?? emptyTowerState()),
+          bosses: normalizeBossesState(p.bosses ?? current.bosses ?? emptyBossesState()),
           worldHunters: p.worldHunters ?? current.worldHunters,
         };
         tagSaveItems(merged);

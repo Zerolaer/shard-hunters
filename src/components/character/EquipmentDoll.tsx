@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { RARITY_COLOR, SLOT_LABEL } from "@/lib/game/constants";
-import { itemIconName, rarityGlow, resolveItemIconDataUrl } from "@/lib/game/itemIcons";
+import { itemIconName, rarityGlow, resolveItemIconSrc } from "@/lib/game/itemIcons";
 import type { EquipSlot, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -62,15 +62,9 @@ function SlotCell({ slot }: { slot: EquipSlot }) {
         <EmptySlotGlyph slot={slot} />
       )}
       {item ? (
-        <>
-          <span
-            className="pointer-events-none absolute right-1 top-1 z-[1] h-1.5 w-1.5 rounded-full"
-            style={{ background: RARITY_COLOR[item.rarity] }}
-          />
-          <span className="pointer-events-none absolute bottom-1 left-1 z-[1] rounded bg-black/65 px-0.5 text-[8px] font-medium tabular-nums text-white/85">
-            {item.itemLevel}
-          </span>
-        </>
+        <span className="item-level-badge pointer-events-none absolute bottom-1 left-1 z-[1] rounded px-0.5 text-[10px] font-semibold leading-none tabular-nums text-white/90">
+          {item.itemLevel}
+        </span>
       ) : null}
       <span className="pointer-events-none absolute -bottom-0.5 left-1/2 z-10 -translate-x-1/2 translate-y-full rounded bg-black/70 px-1 text-[8px] leading-none text-[#8aa0b4] opacity-0 group-hover:opacity-100">
         {SLOT_LABEL[slot]}
@@ -83,40 +77,36 @@ function SlotCell({ slot }: { slot: EquipSlot }) {
 
 export function ItemGlyph({ item, compact }: { item: Item; compact?: boolean }) {
   const glow = rarityGlow(item.rarity);
-  const size = compact ? 48 : 64;
-  const [src, setSrc] = useState<string | null>(null);
+  const src = resolveItemIconSrc(item);
   const Fallback = SLOT_ICONS[item.slot];
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    setSrc(null);
-    void resolveItemIconDataUrl(item, size).then((url) => {
-      if (alive) setSrc(url);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [item.id, item.name, item.slot, item.rarity, size]);
+    setFailed(false);
+  }, [item.id, item.name, item.slot, item.rarity, item.kind, item.materialId]);
 
   return (
     <div className="item-glyph relative h-full w-full" title={itemIconName(item)}>
       <span
-        className="item-glyph-glow pointer-events-none absolute inset-0"
+        className="item-glyph-glow pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[58%]"
         style={{
-          background: `radial-gradient(circle at 50% 55%, ${glow}55 0%, ${glow}18 42%, transparent 72%)`,
+          background: `radial-gradient(ellipse 95% 85% at 50% 115%, ${glow}70 0%, ${glow}38 32%, ${glow}14 58%, transparent 78%)`,
         }}
         aria-hidden
       />
-      {item.blessed ? <span className="item-blessed-sheen pointer-events-none absolute inset-0" aria-hidden /> : null}
+      {item.blessed ? (
+        <span className="item-blessed-sheen pointer-events-none absolute inset-0 z-0" aria-hidden />
+      ) : null}
 
-      {src ? (
+      {!failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt=""
           draggable={false}
+          onError={() => setFailed(true)}
           className={cn(
-            "relative z-[1] h-full w-full object-contain p-[12%]",
+            "item-glyph-art relative z-[1] h-full w-full object-contain p-[10%]",
             compact ? "rounded-[4px]" : "rounded-[6px]",
           )}
         />
@@ -130,8 +120,8 @@ export function ItemGlyph({ item, compact }: { item: Item; compact?: boolean }) 
       {item.enhanceLevel > 0 ? (
         <span
           className={cn(
-            "absolute left-0.5 top-0.5 z-[2] rounded bg-black/70 px-0.5 font-medium leading-none tabular-nums",
-            compact ? "text-[8px]" : "text-[9px]",
+            "item-enhance-badge absolute left-0.5 top-0.5 z-[2] rounded px-0.5 font-semibold leading-none tabular-nums",
+            compact ? "text-[10px]" : "text-[11px]",
           )}
           style={{ color: glow }}
         >

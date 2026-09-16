@@ -33,6 +33,16 @@ export function withEnhanceLevel(item: Item, level: number): Item {
   return { ...item, enhanceLevel };
 }
 
+/** Base item before enhance / blessing / gems — for fair default comparison. */
+export function asDefaultItem(item: Item): Item {
+  return {
+    ...item,
+    enhanceLevel: 0,
+    blessed: false,
+    sockets: item.sockets?.map(() => null),
+  };
+}
+
 export const SLOT_ICONS: Record<EquipSlot, LucideIcon> = {
   helmet: HardHat,
   armor: Shirt,

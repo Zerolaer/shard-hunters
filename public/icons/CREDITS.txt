@@ -1,0 +1,14 @@
+Item icons assembled from CC0 / public-domain Flare RPG assets:
+
+- OSARE weapon icons — Blarumyrran (paint-over), models by pfunked — CC0
+  https://opengameart.org/content/osare-weapon-icons
+- Flare weapon icons 2 — Clint Bellanger & Justin Nichol — CC0
+  https://opengameart.org/content/flare-weapon-icons-2
+- Armor / fantasycore icon atlas — Flare team (Clint Bellanger et al.) — CC0
+  https://github.com/flareteam/flare-game
+- Cloth armor icons (128px) — crowline / Clint Bellanger — CC0
+  https://opengameart.org/content/cloth-armorclothing-icons
+- Selected icons from 496 RPG icons set (spear) — 7Soul / LPC repack — Public Domain
+  https://opengameart.org/content/496-pixel-art-icons-for-medievalfantasy-rpg
+
+Attribution not required (CC0 / PD). Credit appreciated.

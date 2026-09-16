@@ -96,6 +96,10 @@ export const ENDGAME_DROPS: Record<string, EndgameDropRates> = {
   "void-heart": { sparkChance: 0.06, sparkMin: 1, sparkMax: 1, gemChance: 0.05, gemRankBias: 0.2 },
   "abyss-rift": { sparkChance: 0.16, sparkMin: 1, sparkMax: 2, gemChance: 0.14, gemRankBias: 0.55 },
   "throne-eclipse": { sparkChance: 0.26, sparkMin: 1, sparkMax: 3, gemChance: 0.2, gemRankBias: 0.95 },
+  "crown-scar": { sparkChance: 0.3, sparkMin: 1, sparkMax: 3, gemChance: 0.24, gemRankBias: 1.05 },
+  "null-cathedral": { sparkChance: 0.34, sparkMin: 1, sparkMax: 3, gemChance: 0.28, gemRankBias: 1.2 },
+  "eternal-wound": { sparkChance: 0.4, sparkMin: 2, sparkMax: 4, gemChance: 0.34, gemRankBias: 1.4 },
+  "ash-of-thrones": { sparkChance: 0.48, sparkMin: 2, sparkMax: 5, gemChance: 0.42, gemRankBias: 1.65 },
 };
 
 /**

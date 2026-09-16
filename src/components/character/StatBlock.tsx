@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { CORE_STAT_HINT, STAT_LABEL } from "@/lib/game/constants";
 import { collectGear, formatFullDigits } from "@/lib/game/formulas";
 import type { CoreStat } from "@/lib/game/types";
@@ -21,10 +22,84 @@ const COMBAT_ROWS = [
   { key: "speed", label: "Скорость", icon: Gauge },
 ] as const;
 
+/** Press-and-hold auto-allocate with accelerating repeat. */
+function useHoldAllocate(stat: CoreStat, enabled: boolean) {
+  const allocateStat = useGameStore((s) => s.allocateStat);
+  const holdRef = useRef<{
+    timer: number | null;
+    started: boolean;
+    pointerId: number | null;
+  }>({ timer: null, started: false, pointerId: null });
+
+  function clearHold() {
+    const h = holdRef.current;
+    if (h.timer != null) window.clearTimeout(h.timer);
+    h.timer = null;
+    h.started = false;
+    h.pointerId = null;
+  }
+
+  useEffect(() => () => clearHold(), []);
+
+  function tick(delay: number) {
+    if (useGameStore.getState().character.unspentPoints <= 0) {
+      clearHold();
+      return;
+    }
+    allocateStat(stat);
+    if (useGameStore.getState().character.unspentPoints <= 0) {
+      clearHold();
+      return;
+    }
+    const next = Math.max(28, delay * 0.82);
+    holdRef.current.timer = window.setTimeout(() => tick(next), next);
+  }
+
+  function onPointerDown(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (!enabled || e.button !== 0) return;
+    e.preventDefault();
+    clearHold();
+    holdRef.current.pointerId = e.pointerId;
+    holdRef.current.started = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    allocateStat(stat);
+    holdRef.current.timer = window.setTimeout(() => tick(110), 320);
+  }
+
+  function onPointerUp(e: ReactPointerEvent<HTMLButtonElement>) {
+    if (holdRef.current.pointerId != null && e.currentTarget.hasPointerCapture(holdRef.current.pointerId)) {
+      e.currentTarget.releasePointerCapture(holdRef.current.pointerId);
+    }
+    clearHold();
+  }
+
+  return {
+    onPointerDown,
+    onPointerUp,
+    onPointerCancel: onPointerUp,
+    onContextMenu: (e: ReactMouseEvent) => e.preventDefault(),
+  };
+}
+
+function StatPlusButton({ stat, enabled }: { stat: CoreStat; enabled: boolean }) {
+  const hold = useHoldAllocate(stat, enabled);
+  return (
+    <button
+      type="button"
+      disabled={!enabled}
+      {...hold}
+      className="es-btn es-btn-cyan grid h-7 w-7 touch-none place-items-center p-0 select-none"
+      aria-label={`Вложить в ${STAT_LABEL[stat]}`}
+      title="Удерживайте, чтобы вкладывать быстрее"
+    >
+      <Plus className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 export function StatBlock() {
   const character = useGameStore((s) => s.character);
   const equipment = useGameStore((s) => s.equipment);
-  const allocateStat = useGameStore((s) => s.allocateStat);
   const derived = useDerivedStats();
   const gear = collectGear(equipment);
 
@@ -84,14 +159,7 @@ export function StatBlock() {
                   {STAT_LABEL[stat]}
                 </span>
                 {character.unspentPoints > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => allocateStat(stat)}
-                    className="es-btn es-btn-cyan grid h-7 w-7 place-items-center p-0"
-                    aria-label={`Вложить в ${STAT_LABEL[stat]}`}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                  <StatPlusButton stat={stat} enabled={character.unspentPoints > 0} />
                 )}
               </div>
               <div className="mt-1.5 font-display text-xl font-medium leading-none tracking-tight text-white">

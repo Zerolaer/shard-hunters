@@ -16,6 +16,7 @@ import { emptyGuildState } from "./guild";
 import { emptySinBuild, emptySinCombat } from "./sin/state";
 import { DEFAULT_AVATAR_ID } from "./avatars";
 import "./dungeons";
+import { emptyBossesState } from "./bosses";
 import { emptyTowerState } from "./tower";
 import { createWorldHunters, HUNTER_ROSTER_GEN } from "./hunters";
 import type { GameData, SkillId } from "./types";
@@ -134,6 +135,7 @@ export function createInitialState(opts?: { name?: string }): GameData {
     oreAcc: 0,
     dungeon: { active: null, dailyUsed: {}, paused: {} },
     tower: emptyTowerState(),
+    bosses: emptyBossesState(),
   };
 
   const derived = statsOf(state);

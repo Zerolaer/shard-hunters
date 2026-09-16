@@ -76,10 +76,28 @@ import {
   towerBossName,
   towerClearBonus,
   towerCombatFloor,
+  towerRecommendedBm,
+  applyTowerGuardianPower,
   emptyTowerState,
 } from "./tower";
+import {
+  applyBossArenaPower,
+  BOSS_DEF_BY_ID,
+  BOSS_LOCATION_ID,
+  BOSS_SPOT_ID,
+  bossClearBonus,
+  bossCombatFloor,
+  bossRecommendedBm,
+  emptyBossesState,
+  isBossLocationId,
+  normalizeBossesState,
+  personalBossForIndex,
+  PERSONAL_BOSSES,
+  type BossDef,
+} from "./bosses";
 import { ensureHunters, simulateHunters } from "./hunters";
 import { ensureFarmState, FARM_SPOT_BY_ID, occupySpot, vacatePlayerSpots } from "./spots";
+import type { BossSession } from "./types";
 import {
   afterSinSwing,
   emptySinBuild,
@@ -117,6 +135,8 @@ const CATCHUP_STEP_SHORT = 0.1;
 const CATCHUP_STEP_LONG = 0.2;
 const CATCHUP_LONG_AFTER = 120;
 const OFFLINE_REPORT_SECONDS = 8;
+/** Cap wall time per catch-up call so login/tab-restore cannot freeze the UI for seconds. */
+const CATCHUP_WALL_MS = 12;
 
 let catchupActive = false;
 let catchupKills = 0;
@@ -262,12 +282,30 @@ function currentSpot(state: Draft) {
   return FARM_SPOT_BY_ID[state.combat.spotId];
 }
 
+function activeBossDef(state: Draft): BossDef | null {
+  const id = state.bosses?.active?.defId;
+  if (!id) return null;
+  return BOSS_DEF_BY_ID[id] ?? null;
+}
+
+function pveRequiredBm(state: Draft) {
+  if (isTowerLocationId(state.combat.locationId)) {
+    const floor = Math.max(1, state.tower?.floor ?? 1);
+    return towerRecommendedBm(floor);
+  }
+  if (isBossLocationId(state.combat.locationId)) {
+    const def = activeBossDef(state);
+    if (def) return bossRecommendedBm(def);
+  }
+  return currentSpot(state)?.requiredBm ?? expectedBm(state.character.level);
+}
+
 function pveBmMults(state: Draft, derived: ReturnType<typeof statsOf>) {
   const monster = state.combat.monster;
   if (!monster || monster.isPvp || state.combat.mode === "pvp") {
     return { dealt: 1, taken: 1 };
   }
-  const required = currentSpot(state)?.requiredBm ?? expectedBm(state.character.level);
+  const required = pveRequiredBm(state);
   return {
     dealt: bmOffenseMult(derived.powerScore, required),
     taken: bmDefenseMult(derived.powerScore, required),
@@ -288,6 +326,7 @@ export function ensureWorld(state: Draft) {
   void DUNGEON_HALL_BY_ID;
   state.dungeon = normalizeDungeonState(state.dungeon);
   state.tower = normalizeTowerState(state.tower);
+  state.bosses = normalizeBossesState(state.bosses);
   state.guild = normalizeGuild(state.guild);
   if (!state.mines) state.mines = {};
   for (const mine of MINES) {
@@ -322,6 +361,9 @@ export function ensureWorld(state: Draft) {
   }
   if (!state.progression.locations[TOWER_LOCATION_ID]) {
     state.progression.locations[TOWER_LOCATION_ID] = emptyLocationProgress();
+  }
+  if (!state.progression.locations[BOSS_LOCATION_ID]) {
+    state.progression.locations[BOSS_LOCATION_ID] = emptyLocationProgress();
   }
   if (!state.progression.unlockedLocationIds?.length) {
     state.progression.unlockedLocationIds = ["woods"];
@@ -522,8 +564,9 @@ function spawnTowerGuardian(state: Draft) {
     locationId: TOWER_LOCATION_ID,
     floor: towerCombatFloor(floor),
     isBoss: true,
-    danger: 1,
+    danger: 1.15,
   });
+  applyTowerGuardianPower(state.combat.monster, floor);
   state.combat.monster.name = towerBossName(floor);
   state.combat.monsterAtkAcc = 0;
   state.combat.playerAtkAcc = 0;
@@ -587,9 +630,95 @@ export function leaveTowerSession(state: Draft, reason: string) {
   evacuateFromDungeon(state, reason);
 }
 
+function spawnArenaBoss(state: Draft, def: BossDef) {
+  state.combat.mode = "pve";
+  // Soft profile at the boss's level; real power comes from applyBossArenaPower
+  // (same pattern as tower guardians — avoids double-counting bmScale).
+  state.combat.monster = generateMonster({
+    locationId: BOSS_LOCATION_ID,
+    floor: bossCombatFloor(def),
+    isBoss: true,
+    danger: 1.15,
+    baseLevel: def.baseLevel,
+    threat: 1,
+  });
+  applyBossArenaPower(state.combat.monster, def);
+  state.combat.monster.name = def.name;
+  state.combat.monsterAtkAcc = 0;
+  state.combat.playerAtkAcc = 0;
+  if (!state.progression.locations[BOSS_LOCATION_ID]) {
+    state.progression.locations[BOSS_LOCATION_ID] = emptyLocationProgress();
+  }
+  state.progression.locations[BOSS_LOCATION_ID].floor = def.chapter ?? 1;
+  onSinNewMonster(state);
+}
+
+function grantBossClear(state: Draft, def: BossDef) {
+  const bonus = bossClearBonus(def);
+  state.resources.gold += bonus.gold;
+  state.resources.shards += bonus.shards;
+  if (bonus.ore > 0) {
+    state.resources.ore += bonus.ore;
+    noteGuildOre(state.guild, bonus.ore);
+  }
+  if (bonus.sparks > 0) {
+    state.resources.blessing = (state.resources.blessing ?? 0) + bonus.sparks;
+  }
+  if (bonus.itemRarity) {
+    const itemLevel =
+      def.kind === "personal"
+        ? Math.max(1, 8 + (def.chapter ?? 1) * 6)
+        : Math.max(1, def.baseLevel + 4);
+    const item = generateItem({
+      itemLevel,
+      rarity: bonus.itemRarity,
+      preferredClass: state.character.classId,
+    });
+    receiveLootItem(state, item, "boss");
+  }
+  if (bonus.gemRank) {
+    receiveGem(state, createGem(bonus.gemRank), true);
+  }
+  const extras = [`+${bonus.gold} золота`, `+${bonus.shards} осколков`];
+  if (bonus.ore > 0) extras.push(`+${bonus.ore} руды`);
+  if (bonus.sparks > 0) extras.push(`+${bonus.sparks} ${BLESSING_MATERIAL_LABEL.toLowerCase()}`);
+  const kindLabel =
+    def.kind === "world" ? "Мировой босс" : def.kind === "field" ? "Полевой босс" : "Сюжетный босс";
+  pushLog(state, "boss", `${kindLabel}: ${def.name} повержен! ${extras.join(", ")}`);
+}
+
+export function beginBossFight(state: Draft, session: BossSession) {
+  const def = BOSS_DEF_BY_ID[session.defId];
+  if (!def) return;
+  if (!state.bosses) state.bosses = emptyBossesState();
+  state.bosses = normalizeBossesState(state.bosses);
+  vacatePlayerSpots(state.farm);
+  state.combat.locationId = BOSS_LOCATION_ID;
+  state.combat.spotId = BOSS_SPOT_ID;
+  state.combat.mode = "pve";
+  state.combat.lootlessKills = 0;
+  state.bosses.active = session;
+  spawnArenaBoss(state, def);
+  state.settings.autoBattle = true;
+}
+
+export function leaveBossSession(state: Draft, reason: string) {
+  if (state.bosses) state.bosses.active = null;
+  evacuateFromDungeon(state, reason);
+}
+
 function spawnNext(state: Draft, isBoss: boolean) {
   if (isTowerLocationId(state.combat.locationId)) {
     spawnTowerGuardian(state);
+    return;
+  }
+  if (isBossLocationId(state.combat.locationId)) {
+    const def = activeBossDef(state);
+    if (def) {
+      spawnArenaBoss(state, def);
+      return;
+    }
+    leaveBossSession(state, "Босс недоступен — возврат в открытый мир.");
     return;
   }
   const locId = state.combat.locationId;
@@ -696,6 +825,40 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
     return;
   }
 
+  if (isBossLocationId(locId)) {
+    if (!state.bosses) state.bosses = emptyBossesState();
+    const session = state.bosses.active;
+    const def = session ? BOSS_DEF_BY_ID[session.defId] : null;
+    if (!session || !def) {
+      leaveBossSession(state, "Бой завершён — возврат в открытый мир.");
+      return;
+    }
+    grantBossClear(state, def);
+    if (def.kind === "world") {
+      state.bosses.worldKills[session.spawnKey] = true;
+    } else if (def.kind === "field") {
+      state.bosses.fieldKills[def.id] = session.spawnKey;
+    } else if (def.kind === "personal") {
+      const ch = def.chapter ?? 1;
+      state.bosses.personalCleared = Math.max(state.bosses.personalCleared, ch);
+      state.bosses.personalIndex = Math.min(
+        personalBossForIndex(ch + 1) ? ch + 1 : ch,
+        PERSONAL_BOSSES.length,
+      );
+      // After clear, leave arena — next chapter is started from the panel.
+      leaveBossSession(
+        state,
+        ch >= PERSONAL_BOSSES.length
+          ? `Сюжет завершён: ${def.name} пал. Все главы пройдены.`
+          : `Глава ${ch} пройдена. Следующий босс доступен во вкладке Боссы.`,
+      );
+      return;
+    }
+    // World/field: leave after kill (one kill per spawn window).
+    leaveBossSession(state, `${def.name} повержен. Арена закрыта до следующего спавна.`);
+    return;
+  }
+
   // Hourly halls: endless trash farm, no floor/boss progression.
   if (isDungeonLocationId(locId)) {
     spawnNext(state, false);
@@ -783,7 +946,15 @@ function evacuateFromDungeon(state: Draft, reason: string) {
   if (state.tower && (state.tower.active || isTowerLocationId(state.combat.locationId))) {
     state.tower.active = false;
   }
-  if (!was && !isDungeonLocationId(state.combat.locationId) && !isTowerLocationId(state.combat.locationId)) {
+  const wasBoss =
+    !!state.bosses?.active || isBossLocationId(state.combat.locationId);
+  if (state.bosses) state.bosses.active = null;
+  if (
+    !was &&
+    !isDungeonLocationId(state.combat.locationId) &&
+    !isTowerLocationId(state.combat.locationId) &&
+    !wasBoss
+  ) {
     return;
   }
 
@@ -801,7 +972,7 @@ function evacuateFromDungeon(state: Draft, reason: string) {
     state.progression.locations[locId] = emptyLocationProgress();
   }
   vacatePlayerSpots(state.farm);
-  if (spot && !isDungeonLocationId(spot.locationId)) {
+  if (spot && !isDungeonLocationId(spot.locationId) && !isBossLocationId(spot.locationId)) {
     occupySpot(state.farm, spot.id, {
       id: "player",
       name: state.character.name,
@@ -1195,20 +1366,29 @@ export function applyOffline(state: Draft, now = Date.now()) {
     autoBattle: state.settings.autoBattle,
   };
   catchupKills = 0;
+  const tickStartedAt = state.meta.lastTick || now;
   tickGame(state, elapsed);
+  // Chunked catch-up: more work remains — skip the summary until we finish.
+  const stillBehind = Math.max(0, (Date.now() - (state.meta.lastTick || Date.now())) / 1000);
+  if (stillBehind > 1) {
+    state.meta.pendingOffline = null;
+    return;
+  }
 
   if (elapsed < OFFLINE_REPORT_SECONDS) {
     state.meta.pendingOffline = null;
     return;
   }
 
+  const caughtSec = Math.max(0, ((state.meta.lastTick || now) - tickStartedAt) / 1000);
+  const reportSec = Math.max(caughtSec, elapsed - stillBehind);
   const ore = Math.max(0, state.resources.ore - before.ore);
   const gold = Math.max(0, state.resources.gold - before.gold);
   const xp = Math.max(0, lifetimeXp(state.character.level, state.character.xp) - before.xp);
   const levels = Math.max(0, state.character.level - before.level);
   const kills = catchupKills;
   const died = before.autoBattle && !state.settings.autoBattle;
-  state.meta.pendingOffline = { seconds: Math.round(elapsed), ore, gold, xp, kills, levels, died };
+  state.meta.pendingOffline = { seconds: Math.round(reportSec), ore, gold, xp, kills, levels, died };
 
   const bits: string[] = [];
   if (kills > 0) bits.push(`${kills} убийств`);
@@ -1248,7 +1428,9 @@ export function tickGame(state: Draft, dt: number) {
   catchupActive = true;
   try {
     withSuppressedCombatFx(() => {
+      const wallStart = Date.now();
       while (remaining > 1e-9) {
+        if (Date.now() - wallStart > CATCHUP_WALL_MS) break;
         const slice = Math.min(step, remaining);
         remaining -= slice;
         simNow += slice * 1000;
@@ -1261,7 +1443,12 @@ export function tickGame(state: Draft, dt: number) {
   }
   syncCombatEffects(state);
   state.combat.floatingTexts = [];
-  state.meta.lastTick = Date.now();
+  if (remaining <= 1e-9) {
+    state.meta.lastTick = Date.now();
+  } else {
+    // Leave unpaid sim time for the next pulse instead of skipping it.
+    state.meta.lastTick = start + (dt - remaining) * 1000;
+  }
 }
 
 export function findItem(state: Draft, itemId: string) {

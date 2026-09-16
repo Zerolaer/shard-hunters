@@ -500,8 +500,31 @@ export type RightTab =
   | "world"
   | "mines"
   | "dungeons"
+  | "tower"
+  | "bosses"
   | "guild"
   | "ranking";
+
+export type BossKind = "world" | "field" | "personal";
+
+export interface BossSession {
+  kind: BossKind;
+  defId: string;
+  /** Window/hour key — kill credit only matches this spawn. */
+  spawnKey: string;
+}
+
+export interface BossesState {
+  active: BossSession | null;
+  /** Next personal chapter to attempt (1-based). */
+  personalIndex: number;
+  /** Highest personal chapter cleared. */
+  personalCleared: number;
+  /** World window keys already claimed today (or historically). */
+  worldKills: Record<string, true>;
+  /** Field boss id → spawn key of last successful kill. */
+  fieldKills: Record<string, string>;
+}
 
 export type DungeonType = "xp" | "gold" | "ore" | "loot";
 
@@ -555,4 +578,5 @@ export interface GameData {
   oreAcc: number;
   dungeon: DungeonState;
   tower: TowerState;
+  bosses: BossesState;
 }

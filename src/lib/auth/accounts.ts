@@ -33,6 +33,12 @@ export function isUsableSave(raw: string | null | undefined) {
 let activeAccountId: string | null = null;
 let cloudSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingCloudValue: string | null = null;
+/** Throttle disk writes — ticks run ~20/s and each save is ~100KB; sync localStorage freezes the UI. */
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingPersistName: string | null = null;
+let pendingPersistSnapshot: { state: unknown; version?: number } | null = null;
+let pendingPersistRaw: string | null = null;
+const PERSIST_FLUSH_MS = 1000;
 
 export function getSessionAccountId(): string | null {
   return activeAccountId;
@@ -133,15 +139,18 @@ export function readLocalSaveCache(accountId: string, persistName: string) {
 async function pushCloudSave(value: string, keepalive = false) {
   try {
     const data = JSON.parse(value) as unknown;
+    const body = JSON.stringify({ data });
+    // Chromium caps keepalive request bodies (~64KiB). Our saves are often ~100KB.
+    const useKeepalive = keepalive && body.length < 60_000;
     const init: RequestInit = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ data }),
-      keepalive,
+      body,
+      keepalive: useKeepalive,
     };
     // pagehide/unload must not use AbortController — the timer would cancel keepalive.
-    if (keepalive) {
+    if (useKeepalive) {
       await fetch("/api/save", init);
       return;
     }
@@ -151,7 +160,47 @@ async function pushCloudSave(value: string, keepalive = false) {
   }
 }
 
+function writePersistValue(name: string, value: string) {
+  const id = getSessionAccountId();
+  if (!id || typeof window === "undefined") return;
+  if (!isUsableSave(value)) return;
+  writeLocalSaveCache(id, name, value);
+  scheduleCloudSave(value);
+}
+
+function flushPendingPersist() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  const name = pendingPersistName;
+  const snapshot = pendingPersistSnapshot;
+  let raw = pendingPersistRaw;
+  pendingPersistName = null;
+  pendingPersistSnapshot = null;
+  pendingPersistRaw = null;
+  if (!name) return;
+  if (!raw && snapshot) {
+    try {
+      raw = JSON.stringify(snapshot);
+    } catch (err) {
+      console.error("[persist] stringify failed", err);
+      return;
+    }
+  }
+  if (raw) writePersistValue(name, raw);
+}
+
+function armPersistFlush() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    flushPendingPersist();
+  }, PERSIST_FLUSH_MS);
+}
+
 export function flushCloudSave() {
+  flushPendingPersist();
   if (cloudSaveTimer) {
     clearTimeout(cloudSaveTimer);
     cloudSaveTimer = null;
@@ -174,6 +223,36 @@ function scheduleCloudSave(value: string) {
   }, 1200);
 }
 
+/**
+ * Zustand PersistStorage that throttles JSON.stringify + localStorage.
+ * Using createJSONStorage would still stringify on every tick (~20/s × ~100KB).
+ */
+export function createThrottledPersistStorage(persistName: string) {
+  return {
+    getItem(name: string) {
+      const id = getSessionAccountId();
+      if (!id || typeof window === "undefined") return null;
+      const raw = readLocalSaveCache(id, name || persistName);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as { state: unknown; version?: number };
+      } catch {
+        return null;
+      }
+    },
+    setItem(name: string, newValue: { state: unknown; version?: number }) {
+      if (typeof window === "undefined") return;
+      pendingPersistName = name || persistName;
+      pendingPersistSnapshot = newValue;
+      pendingPersistRaw = null;
+      armPersistFlush();
+    },
+    removeItem() {
+      // logout must not wipe the profile
+    },
+  };
+}
+
 export function createAccountStorage(persistName: string) {
   return {
     getItem(name: string) {
@@ -185,8 +264,10 @@ export function createAccountStorage(persistName: string) {
       const id = getSessionAccountId();
       if (!id || typeof window === "undefined") return;
       if (!isUsableSave(value)) return;
-      writeLocalSaveCache(id, name, value);
-      scheduleCloudSave(value);
+      pendingPersistName = name || persistName;
+      pendingPersistRaw = value;
+      pendingPersistSnapshot = null;
+      armPersistFlush();
     },
     removeItem() {
       // logout must not wipe the profile

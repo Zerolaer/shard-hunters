@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Coins,
-  DoorOpen,
-  Gem,
-  Pickaxe,
-  Sparkles,
-  Timer,
-  TowerControl,
-  Zap,
-} from "lucide-react";
+import { Coins, DoorOpen, Gem, Pickaxe, Sparkles, Timer, Zap } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   DUNGEON_HALL_BY_ID,
@@ -28,18 +19,7 @@ import {
   type DungeonHall,
   type DungeonType,
 } from "@/lib/game/dungeons";
-import {
-  TOWER_MIN_LEVEL,
-  TOWER_MILESTONE,
-  emptyTowerState,
-  isTowerMilestone,
-  towerClearBonus,
-  towerComfortBm,
-  towerMilestoneRarity,
-  towerRecommendedBm,
-} from "@/lib/game/tower";
 import { formatFullDigits } from "@/lib/game/formulas";
-import { RARITY_LABEL } from "@/lib/game/constants";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
 
 const TYPE_ICON = {
@@ -53,7 +33,7 @@ function rateChips(hall: DungeonHall) {
   const chips: string[] = [];
   if (hall.rates.xpMult > 1.01) chips.push(`XP ×${hall.rates.xpMult}`);
   if (hall.rates.goldMult > 1.01) chips.push(`золото ×${hall.rates.goldMult}`);
-  if (hall.rates.orePerKill > 0) chips.push("руда с убийств");
+  if (hall.rates.orePerKill > 0) chips.push(`руда ×${hall.rates.orePerKill}/убийство`);
   if (hall.rates.dropChanceMult > 1.01) chips.push(`дроп ×${hall.rates.dropChanceMult}`);
   if (hall.rates.rarityBias > 0) chips.push("удача редкости");
   return chips;
@@ -65,14 +45,14 @@ export function DungeonsPanel() {
   const tower = useGameStore((s) => s.tower);
   const enterDungeon = useGameStore((s) => s.enterDungeon);
   const leaveDungeon = useGameStore((s) => s.leaveDungeon);
-  const enterTower = useGameStore((s) => s.enterTower);
   const derived = useDerivedStats();
   const [type, setType] = useState<DungeonType>("xp");
   const [msg, setMsg] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   const dungeonState = dungeon ?? emptyDungeonState();
-  const towerState = tower ?? emptyTowerState();
+  const towerActive = !!tower?.active;
+  const busy = !!dungeon?.active || towerActive;
 
   useEffect(() => {
     if (!dungeon?.active) return;
@@ -84,268 +64,222 @@ export function DungeonsPanel() {
   const activeHall = active ? DUNGEON_HALL_BY_ID[active.hallId] : null;
   const remain = dungeonRemainingMs(active, now);
   const halls = hallsForType(type);
-  const towerFloor = towerState.floor;
-  const towerRec = towerRecommendedBm(towerFloor);
-  const towerComfort = towerComfortBm(towerFloor);
-  const towerLocked = level < TOWER_MIN_LEVEL;
-  const towerWeak = !towerLocked && derived.powerScore < towerComfort;
-  const towerOk = !towerLocked && derived.powerScore >= towerRec;
-  const towerBusy = towerState.active || !!active;
-  const nextMilestone = Math.ceil(towerFloor / TOWER_MILESTONE) * TOWER_MILESTONE;
-  const milestoneBonus = towerClearBonus(nextMilestone);
-  const regularBonus = towerClearBonus(towerFloor);
+  const typeAvailable = dungeonTypeAvailable(dungeonState, type, now);
+  const typePausedMs = dungeonPausedRemainingMs(dungeonState, type, now);
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="es-plate p-3">
-        <div className="font-display text-[14px] text-white">Подземелья</div>
-        <p className="mt-1 text-[11px] leading-snug text-[#8aa0b4]">
-          Часовые залы — ежедневный фарм. Башня — бесконечные этажи боссов: убил
-          стража — следующий этаж. Каждые {TOWER_MILESTONE} этажей дают особую награду.
-        </p>
+      {active && activeHall ? (
+        <div className="es-plate border-[var(--accent)]/35 bg-[var(--accent)]/8 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--accent)]">
+                Активный забег · {DUNGEON_TYPE_LABEL[active.type]}
+              </div>
+              <div className="mt-0.5 font-display text-[15px] text-white">{activeHall.name}</div>
+              <div className="mt-1 flex items-center gap-1.5 text-[12px] tabular-nums text-white/70">
+                <Timer className="h-3.5 w-3.5" />
+                {formatDungeonCountdown(remain)}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMsg(leaveDungeon().message)}
+              className="es-btn es-inv-control shrink-0 px-2.5"
+            >
+              <DoorOpen className="h-3.5 w-3.5" />
+              Выйти
+            </button>
+          </div>
+        </div>
+      ) : null}
 
-        {towerState.active ? (
-          <div className="mt-3 rounded-xl border border-[#fb7185]/40 bg-[#fb7185]/10 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-[#fb7185]">
-                  Активный забег · Башня
-                </div>
-                <div className="mt-0.5 font-display text-[15px] text-white">
-                  Этаж {towerFloor}
-                  {towerState.bestFloor > 0 ? (
-                    <span className="ml-2 font-sans text-[11px] font-normal text-white/50">
-                      лучший {towerState.bestFloor}
+      {msg ? <p className="text-[11px] text-white/65">{msg}</p> : null}
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.72fr)_minmax(0,1.28fr)]">
+        {/* Left: dungeon kinds */}
+        <aside className="es-plate flex flex-col gap-1 p-2">
+          <div className="es-label px-1.5 pb-1.5 pt-0.5">Виды данжей</div>
+          <div className="flex gap-1 overflow-x-auto pb-0.5 lg:flex-col lg:overflow-visible">
+            {DUNGEON_TYPES.map((t) => {
+              const Icon = TYPE_ICON[t];
+              const available = dungeonTypeAvailable(dungeonState, t, now);
+              const pausedMs = dungeonPausedRemainingMs(dungeonState, t, now);
+              const selected = type === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setType(t)}
+                  className={cn(
+                    "min-w-[7.5rem] shrink-0 rounded-lg border px-2.5 py-2.5 text-left transition lg:min-w-0 lg:w-full",
+                    selected
+                      ? "border-white/25 bg-white/10"
+                      : "border-transparent hover:border-white/10 hover:bg-white/[0.04]",
+                    !available && "opacity-55",
+                  )}
+                  title={
+                    available
+                      ? pausedMs > 0
+                        ? `Осталось ${formatDungeonCountdown(pausedMs)}`
+                        : DUNGEON_TYPE_BLURB[t]
+                      : "Время на сегодня исчерпано"
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        selected ? "text-[var(--accent)]" : "text-white/45",
+                      )}
+                    />
+                    <span className="font-display text-[13px] text-white">
+                      {DUNGEON_TYPE_LABEL[t]}
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/45 lg:line-clamp-none">
+                    {DUNGEON_TYPE_BLURB[t]}
+                  </p>
+                  {!available ? (
+                    <span className="mt-1.5 inline-block text-[9px] uppercase tracking-wide text-white/35">
+                      сегодня закрыто
+                    </span>
+                  ) : pausedMs > 0 ? (
+                    <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] tabular-nums text-white/55">
+                      <Timer className="h-3 w-3" />
+                      {formatDungeonCountdown(pausedMs)}
                     </span>
                   ) : null}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const res = leaveDungeon();
-                  setMsg(res.message);
-                }}
-                className="es-btn es-inv-control shrink-0 px-2.5"
-              >
-                <DoorOpen className="h-3.5 w-3.5" />
-                Выйти
-              </button>
-            </div>
+                </button>
+              );
+            })}
           </div>
-        ) : null}
+        </aside>
 
-        {active && activeHall ? (
-          <div className="mt-3 rounded-xl border border-[var(--accent)]/35 bg-[var(--accent)]/8 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.14em] text-[var(--accent)]">
-                  Активный забег · {DUNGEON_TYPE_LABEL[active.type]}
-                </div>
-                <div className="mt-0.5 font-display text-[15px] text-white">{activeHall.name}</div>
-                <div className="mt-1 flex items-center gap-1.5 text-[12px] tabular-nums text-white/70">
-                  <Timer className="h-3.5 w-3.5" />
-                  {formatDungeonCountdown(remain)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const res = leaveDungeon();
-                  setMsg(res.message);
-                }}
-                className="es-btn es-inv-control shrink-0 px-2.5"
-              >
-                <DoorOpen className="h-3.5 w-3.5" />
-                Выйти
-              </button>
+        {/* Right: floor/level cards for selected kind */}
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-end justify-between gap-2 px-0.5">
+            <div>
+              <div className="es-label">Уровни · {DUNGEON_TYPE_LABEL[type]}</div>
+              <p className="mt-0.5 text-[11px] text-[#8aa0b4]">{DUNGEON_TYPE_BLURB[type]}</p>
             </div>
-          </div>
-        ) : null}
-
-        {msg ? <p className="mt-2 text-[11px] text-white/65">{msg}</p> : null}
-      </div>
-
-      <div
-        className={cn(
-          "rounded-xl border bg-black/35 p-3 backdrop-blur-md",
-          towerLocked && "opacity-45",
-        )}
-        style={{ borderColor: `${"#fb7185"}55` }}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-[#fb7185]">
-              <TowerControl className="h-3.5 w-3.5" />
-              Башня Испытаний
-            </div>
-            <div className="mt-1 font-display text-[15px] text-white">
-              Этаж {towerFloor}
-              {towerState.bestFloor > 0 ? (
-                <span className="ml-2 font-sans text-[11px] font-normal text-white/45">
-                  рекорд {towerState.bestFloor}
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 text-[11px] leading-snug text-[#8aa0b4]">
-              Бесконечный шпиль: каждый этаж — босс. Смерть оставляет вас на том же
-              этаже. Выход сохраняет прогресс.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-              <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 tabular-nums text-white/60">
-                ур. {TOWER_MIN_LEVEL}+
+            {typePausedMs > 0 && typeAvailable ? (
+              <span className="text-[11px] tabular-nums text-white/55">
+                осталось {formatDungeonCountdown(typePausedMs)}
               </span>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
-                  towerOk
-                    ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200/90"
-                    : towerWeak
-                      ? "border-rose-400/25 bg-rose-500/10 text-rose-200/90"
-                      : "border-amber-400/20 bg-amber-500/10 text-amber-100/90",
-                )}
-              >
-                <Zap className="h-3 w-3" />
-                БМ {formatFullDigits(towerRec)}
-              </span>
-              <span className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-white/50">
-                этаж: +{formatFullDigits(regularBonus.gold)} зол.
-              </span>
-              <span className="rounded border border-[#fb7185]/25 bg-[#fb7185]/10 px-1.5 py-0.5 text-[#fda4af]">
-                эт. {nextMilestone}: {RARITY_LABEL[towerMilestoneRarity(nextMilestone)]}
-                {milestoneBonus.gemRank ? " · камень" : ""}
-                {isTowerMilestone(towerFloor) ? " · сейчас" : ""}
-              </span>
-            </div>
-            {towerWeak ? (
-              <p className="mt-1.5 text-[10px] text-rose-300/80">
-                Ваш БМ ниже комфортного — страж этажа опасен.
-              </p>
+            ) : !typeAvailable ? (
+              <span className="text-[11px] text-white/40">лимит на сегодня</span>
             ) : null}
           </div>
-          <button
-            type="button"
-            disabled={towerLocked || towerBusy}
-            onClick={() => {
-              const res = enterTower();
-              setMsg(res.message);
-            }}
-            className="es-btn es-btn-cyan es-inv-control shrink-0 px-2.5"
-          >
-            {towerState.bestFloor > 0 ? "Продолжить" : "Войти"}
-          </button>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {halls.map((hall) => (
+              <FloorCard
+                key={hall.id}
+                hall={hall}
+                level={level}
+                power={derived.powerScore}
+                available={typeAvailable}
+                busy={busy}
+                pausedMs={typePausedMs}
+                onEnter={() => setMsg(enterDungeon(hall.id).message)}
+              />
+            ))}
+          </div>
         </div>
       </div>
-
-      <div className="grid grid-cols-4 gap-1 rounded-lg border border-white/8 bg-black/20 p-1">
-        {DUNGEON_TYPES.map((t) => {
-          const Icon = TYPE_ICON[t];
-          const available = dungeonTypeAvailable(dungeonState, t, now);
-          const pausedMs = dungeonPausedRemainingMs(dungeonState, t, now);
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setType(t)}
-              className={cn(
-                "es-btn h-auto flex-col gap-0.5 py-2 text-[10px]",
-                type === t && "es-btn-amber",
-                !available && "opacity-55",
-              )}
-              title={
-                available
-                  ? pausedMs > 0
-                    ? `Осталось ${formatDungeonCountdown(pausedMs)} — можно продолжить`
-                    : DUNGEON_TYPE_BLURB[t]
-                  : "Время на сегодня исчерпано"
-              }
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {DUNGEON_TYPE_LABEL[t]}
-              {!available ? (
-                <span className="text-[9px] text-white/40">сегодня</span>
-              ) : pausedMs > 0 ? (
-                <span className="text-[9px] tabular-nums text-white/55">
-                  {formatDungeonCountdown(pausedMs)}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-
-      <p className="text-[11px] text-[#8aa0b4]">{DUNGEON_TYPE_BLURB[type]}</p>
-
-      <div className="space-y-2">
-        {halls.map((hall) => {
-          const rec = dungeonRecommendedBm(hall);
-          const comfort = dungeonComfortBm(hall);
-          const locked = level < hall.minLevel;
-          const weak = !locked && derived.powerScore < comfort;
-          const okBm = !locked && derived.powerScore >= rec;
-          const available = dungeonTypeAvailable(dungeonState, hall.type, now);
-          const busy = !!active || towerState.active;
-          const pausedMs = dungeonPausedRemainingMs(dungeonState, hall.type, now);
-          return (
-            <div
-              key={hall.id}
-              className={cn(
-                "rounded-xl border border-white/10 bg-black/35 p-3 backdrop-blur-md",
-                locked && "opacity-45",
-              )}
-              style={{ borderColor: locked ? undefined : `${hall.accent}33` }}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-display text-[13px] text-white">{hall.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
-                    <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 tabular-nums text-white/60">
-                      ур. {hall.minLevel}+
-                    </span>
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
-                        okBm
-                          ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200/90"
-                          : weak
-                            ? "border-rose-400/25 bg-rose-500/10 text-rose-200/90"
-                            : "border-amber-400/20 bg-amber-500/10 text-amber-100/90",
-                      )}
-                    >
-                      <Zap className="h-3 w-3" />
-                      БМ {formatFullDigits(rec)}
-                    </span>
-                    {rateChips(hall).map((c) => (
-                      <span
-                        key={c}
-                        className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-white/50"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                  {weak ? (
-                    <p className="mt-1.5 text-[10px] text-rose-300/80">
-                      Ваш БМ ниже комфортного — зал опасен.
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={locked || !available || busy}
-                  onClick={() => {
-                    const res = enterDungeon(hall.id);
-                    setMsg(res.message);
-                  }}
-                  className="es-btn es-btn-cyan es-inv-control shrink-0 px-2.5"
-                >
-                  {pausedMs > 0 && !busy ? "Продолжить" : "Войти"}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
+  );
+}
+
+function FloorCard({
+  hall,
+  level,
+  power,
+  available,
+  busy,
+  pausedMs,
+  onEnter,
+}: {
+  hall: DungeonHall;
+  level: number;
+  power: number;
+  available: boolean;
+  busy: boolean;
+  pausedMs: number;
+  onEnter: () => void;
+}) {
+  const rec = dungeonRecommendedBm(hall);
+  const comfort = dungeonComfortBm(hall);
+  const locked = level < hall.minLevel;
+  const weak = !locked && power < comfort;
+  const okBm = !locked && power >= rec;
+  const chips = rateChips(hall);
+
+  return (
+    <article
+      className={cn(
+        "es-well flex flex-col gap-2.5 p-3 transition",
+        locked && "opacity-50",
+      )}
+      style={{ boxShadow: `inset 3px 0 0 0 ${hall.accent}99` }}
+    >
+      <div>
+        <div className="font-display text-[14px] leading-tight text-white">{hall.name}</div>
+        <p className="mt-1 text-[10px] text-white/45">{hall.blurb}</p>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 text-[10px]">
+        <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 tabular-nums text-white/60">
+          ур. {hall.minLevel}+
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
+            okBm
+              ? "border-white/20 bg-white/10 text-white/85"
+              : weak
+                ? "border-[#fb7185]/30 bg-[#fb7185]/10 text-[#fda4af]"
+                : "border-[#e4c36a]/25 bg-[#e4c36a]/10 text-[#f0d78c]",
+          )}
+        >
+          <Zap className="h-3 w-3" />
+          БМ {formatFullDigits(rec)}
+        </span>
+      </div>
+
+      <ul className="space-y-1 text-[11px] text-white/70">
+        {chips.length > 0 ? (
+          chips.map((c) => (
+            <li key={c} className="flex items-center gap-2">
+              <span
+                className="h-1 w-1 shrink-0 rounded-full"
+                style={{ background: hall.accent }}
+              />
+              {c}
+            </li>
+          ))
+        ) : (
+          <li className="text-[#8aa0b4]">Стандартный фарм зала</li>
+        )}
+        <li className="flex items-center gap-2 text-white/45">
+          <span className="h-1 w-1 shrink-0 rounded-full bg-white/25" />
+          босс · {hall.bossName}
+        </li>
+      </ul>
+
+      {weak ? (
+        <p className="text-[10px] text-[#fda4af]">БМ ниже комфортного — зал опасен.</p>
+      ) : null}
+
+      <button
+        type="button"
+        disabled={locked || !available || busy}
+        onClick={onEnter}
+        className="es-btn es-btn-cyan mt-auto h-9 w-full px-3"
+      >
+        {pausedMs > 0 && !busy && !locked ? "Продолжить" : "ВОЙТИ"}
+      </button>
+    </article>
   );
 }

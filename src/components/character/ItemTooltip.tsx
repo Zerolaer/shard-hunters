@@ -14,7 +14,7 @@ import {
   itemStatMultiplier,
 } from "@/lib/game/formulas";
 import { GEM_NAME, socketedGems } from "@/lib/game/gems";
-import { itemIconName, rarityGlow, resolveItemIconDataUrl } from "@/lib/game/itemIcons";
+import { itemIconName, rarityGlow, resolveItemIconSrc } from "@/lib/game/itemIcons";
 import { GEM_RANK_ACCENT } from "@/lib/game/workshop";
 import type { AffixStat, EquipSlot, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
@@ -24,6 +24,7 @@ import {
   RARITY_ICONS,
   SLOT_ICONS,
   STAT_ICONS,
+  asDefaultItem,
   withEnhanceLevel,
 } from "./itemUi";
 
@@ -56,18 +57,13 @@ function Delta({ stat, delta }: { stat: AffixStat; delta: number }) {
 function TooltipIcon({ item }: { item: Item }) {
   const glow = rarityGlow(item.rarity);
   const accent = RARITY_COLOR[item.rarity];
-  const [src, setSrc] = useState<string | null>(null);
+  const src = resolveItemIconSrc(item);
   const Fallback = SLOT_ICONS[item.slot];
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    void resolveItemIconDataUrl(item, 64).then((url) => {
-      if (alive) setSrc(url);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [item.id, item.name, item.slot, item.rarity]);
+    setFailed(false);
+  }, [item.id, item.name, item.slot, item.rarity, item.kind, item.materialId]);
 
   return (
     <div
@@ -79,15 +75,21 @@ function TooltipIcon({ item }: { item: Item }) {
       title={itemIconName(item)}
     >
       <span
-        className="pointer-events-none absolute inset-0"
+        className="item-glyph-glow pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[58%]"
         style={{
-          background: `radial-gradient(circle at 50% 55%, ${glow}50 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 95% 85% at 50% 115%, ${glow}65 0%, ${glow}32 35%, transparent 75%)`,
         }}
         aria-hidden
       />
-      {src ? (
+      {!failed ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="relative z-[1] h-full w-full object-contain p-2" draggable={false} />
+        <img
+          src={src}
+          alt=""
+          className="item-glyph-art relative z-[1] h-full w-full object-contain p-2"
+          draggable={false}
+          onError={() => setFailed(true)}
+        />
       ) : (
         <Fallback className="relative z-[1] h-6 w-6 opacity-70" style={{ color: accent }} />
       )}
@@ -97,23 +99,56 @@ function TooltipIcon({ item }: { item: Item }) {
 
 function SocketRow({ item }: { item: Item }) {
   if (!item.sockets?.length) return null;
+  const filled = item.sockets.filter((g): g is NonNullable<typeof g> => !!g);
   return (
-    <div className="mt-2 flex items-center gap-1.5">
-      <span className="text-[10px] uppercase tracking-[0.12em] text-white/35">Гнёзда</span>
-      <div className="flex items-center gap-1">
-        {item.sockets.map((gem, i) => (
-          <span
-            key={i}
-            className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border"
-            style={{
-              borderColor: gem ? GEM_RANK_ACCENT[gem.rank] : "rgba(255,255,255,0.22)",
-              background: gem ? `${GEM_RANK_ACCENT[gem.rank]}55` : "transparent",
-              boxShadow: gem ? `0 0 8px ${GEM_RANK_ACCENT[gem.rank]}66` : undefined,
-            }}
-            title={gem ? GEM_NAME[gem.rank] : "Пустое гнездо"}
-          />
-        ))}
+    <div className="mt-2 space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-white/35">Гнёзда</span>
+        <div className="flex items-center gap-1">
+          {item.sockets.map((gem, i) => (
+            <span
+              key={i}
+              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border"
+              style={{
+                borderColor: gem ? GEM_RANK_ACCENT[gem.rank] : "rgba(255,255,255,0.22)",
+                background: gem ? `${GEM_RANK_ACCENT[gem.rank]}55` : "transparent",
+                boxShadow: gem ? `0 0 8px ${GEM_RANK_ACCENT[gem.rank]}66` : undefined,
+              }}
+              title={gem ? GEM_NAME[gem.rank] : "Пустое гнездо"}
+            />
+          ))}
+        </div>
+        <span className="text-[10px] tabular-nums text-white/30">
+          {filled.length}/{item.sockets.length}
+        </span>
       </div>
+      {filled.length > 0 ? (
+        <div className="space-y-1">
+          {item.sockets.map((gem, i) => {
+            if (!gem) return null;
+            const summary = gem.affixes
+              .map((a) => `${STAT_LABEL[a.stat]} ${formatAffix(a.stat, a.value)}`)
+              .join(" · ");
+            return (
+              <div
+                key={`${gem.id}-${i}`}
+                className="flex items-start gap-2 rounded-md border border-white/[0.06] bg-black/25 px-2 py-1.5"
+              >
+                <span
+                  className="mt-0.5 inline-flex h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ background: GEM_RANK_ACCENT[gem.rank] }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-medium" style={{ color: GEM_RANK_ACCENT[gem.rank] }}>
+                    {GEM_NAME[gem.rank]}
+                  </div>
+                  <div className="text-[10px] leading-snug text-white/50">{summary}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -361,12 +396,14 @@ function GearTooltip({ item, compare }: { item: Item; compare: boolean }) {
 export function ItemInspector({
   item,
   previewLevel,
+  compareDefaults = false,
 }: {
   item: Item;
   previewLevel: number;
+  compareDefaults?: boolean;
 }) {
   if (isMaterialItem(item)) return <MaterialInspector item={item} />;
-  return <GearInspector item={item} previewLevel={previewLevel} />;
+  return <GearInspector item={item} previewLevel={previewLevel} compareDefaults={compareDefaults} />;
 }
 
 function MaterialInspector({ item }: { item: Item }) {
@@ -402,23 +439,30 @@ function MaterialInspector({ item }: { item: Item }) {
 function GearInspector({
   item,
   previewLevel,
+  compareDefaults = false,
 }: {
   item: Item;
   previewLevel: number;
+  compareDefaults?: boolean;
 }) {
   const classId = useGameStore((s) => s.character.classId);
   const equipped = useGameStore((s) => s.equipment[item.slot]);
-  const preview = withEnhanceLevel(item, previewLevel);
+  const preview = compareDefaults ? asDefaultItem(item) : withEnhanceLevel(item, previewLevel);
   const emptySlot = !equipped;
-  const versus = equipped ?? withEnhanceLevel(item, 0);
+  const versusBase = equipped && equipped.id !== item.id ? equipped : emptySlot ? null : equipped;
+  const versus = compareDefaults
+    ? versusBase
+      ? asDefaultItem(versusBase)
+      : null
+    : versusBase ?? withEnhanceLevel(item, 0);
   const mine = affixMap(preview);
   const theirs = affixMap(versus);
   const stats = INSPECTOR_STAT_ORDER.filter((stat) => (mine.get(stat) ?? 0) !== 0 || (theirs.get(stat) ?? 0) !== 0);
   const wear = canWearItem(classId, item);
   const power = itemPower(preview);
-  const versusPower = itemPower(versus);
-  const powerDelta = power - versusPower;
-  const previewing = previewLevel !== item.enhanceLevel;
+  const versusPower = versus ? itemPower(versus) : 0;
+  const powerDelta = versus ? power - versusPower : 0;
+  const previewing = !compareDefaults && previewLevel !== item.enhanceLevel;
   const RarityIcon = RARITY_ICONS[item.rarity];
   const SlotIcon = SLOT_ICONS[item.slot];
   const accent = RARITY_COLOR[item.rarity];
@@ -444,19 +488,23 @@ function GearInspector({
             </div>
             <div className="mt-1 flex items-baseline gap-2 font-display text-lg font-medium leading-tight" style={{ color: accent }}>
               <span className="min-w-0 truncate">{item.name}</span>
-              <span className={cn("shrink-0 tabular-nums", previewing ? "text-[#fbbf24]" : "text-amber-200/90")}>
-                +{previewLevel}
-              </span>
+              {compareDefaults ? (
+                <span className="shrink-0 text-[12px] font-normal text-white/45">базовый</span>
+              ) : (
+                <span className={cn("shrink-0 tabular-nums", previewing ? "text-[#fbbf24]" : "text-amber-200/90")}>
+                  +{previewLevel}
+                </span>
+              )}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/45">
               <span>ур. {item.itemLevel}</span>
-              {item.blessed && <span className="text-[#f43f5e]">Блеснутая</span>}
+              {item.blessed && !compareDefaults && <span className="text-[#f43f5e]">Блеснутая</span>}
               {item.classLock && (
                 <span style={{ color: CLASS_DEFS[item.classLock].accent }}>{CLASS_DEFS[item.classLock].name}</span>
               )}
               {!wear.ok && <span className="text-[#ff5a5f]">{wear.reason}</span>}
             </div>
-            <SocketRow item={item} />
+            {!compareDefaults ? <SocketRow item={item} /> : null}
           </div>
         </div>
       </div>
@@ -464,19 +512,35 @@ function GearInspector({
       <div className="es-well flex items-center gap-2 px-2.5 py-2">
         <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]/80" />
         <div className="min-w-0 flex-1 text-[11px] leading-tight">
-          <span className="text-[#fbbf24]">+{previewLevel}</span>
-          <span className="mx-1 text-white/30">vs</span>
-          {emptySlot ? (
-            <span className="text-[#8aa0b4]">не надето</span>
+          {compareDefaults ? (
+            <>
+              <span className="text-white/80">дефолт</span>
+              <span className="mx-1 text-white/30">vs</span>
+              {emptySlot || !versusBase ? (
+                <span className="text-[#8aa0b4]">не надето</span>
+              ) : (
+                <span className="text-white/80">
+                  {versusBase.id === item.id ? "надето" : versusBase.name} · дефолт
+                </span>
+              )}
+            </>
           ) : (
-            <span className="text-white/80">
-              {equipped.id === item.id ? "надето" : equipped.name} +{equipped.enhanceLevel}
-            </span>
+            <>
+              <span className="text-[#fbbf24]">+{previewLevel}</span>
+              <span className="mx-1 text-white/30">vs</span>
+              {emptySlot ? (
+                <span className="text-[#8aa0b4]">не надето</span>
+              ) : (
+                <span className="text-white/80">
+                  {equipped!.id === item.id ? "надето" : equipped!.name} +{equipped!.enhanceLevel}
+                </span>
+              )}
+            </>
           )}
         </div>
         <span className="shrink-0 font-display text-[12px] font-medium tabular-nums text-white">
           {power}
-          {powerDelta !== 0 && (
+          {versus && powerDelta !== 0 && (
             <span className={powerDelta > 0 ? "ml-1 text-[#3ee0a0]" : "ml-1 text-[#ff5a5f]"}>
               {powerDelta > 0 ? "+" : ""}
               {powerDelta}
@@ -486,7 +550,9 @@ function GearInspector({
       </div>
 
       <div>
-        <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-white/30">Характеристики</div>
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-white/30">
+          {compareDefaults ? "Базовые характеристики" : "Характеристики"}
+        </div>
         <div className="space-y-0.5">
           {stats.map((stat) => {
             const a = mine.get(stat) ?? 0;
@@ -498,7 +564,7 @@ function GearInspector({
                 <span className="min-w-0 flex-1 truncate text-white/55">{STAT_LABEL[stat]}</span>
                 <span className="font-display font-medium tabular-nums text-white">
                   {formatAffix(stat, a)}
-                  <Delta stat={stat} delta={a - b} />
+                  {versus ? <Delta stat={stat} delta={a - b} /> : null}
                 </span>
               </div>
             );

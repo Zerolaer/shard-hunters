@@ -47,9 +47,7 @@ export function PinnedItemPanel() {
       role="dialog"
       aria-label="Панель предмета"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
-        <ItemActionPanel dismissible onDismiss={dismissItemPanel} />
-      </div>
+      <ItemActionPanel dismissible onDismiss={dismissItemPanel} />
     </div>,
     document.body,
   );

@@ -38,6 +38,11 @@ export interface DungeonHall {
   minLevel: number;
   /** Monster base level (also drives BM). */
   baseLevel: number;
+  /**
+   * Multiplies recommended BM. Post-100 halls sit on the overboost ladder —
+   * level alone cannot reach 500k–1M powerScore on the invested curve.
+   */
+  bmScale?: number;
   accent: string;
   mobNames: string[];
   bossName: string;
@@ -101,6 +106,11 @@ const HALL_BRACKETS = [
   { minLevel: 80, baseLevel: 82 },
   { minLevel: 90, baseLevel: 92 },
   { minLevel: 100, baseLevel: 100 },
+  /** Overboost ladder — bmScale opens 200k→1M halls past open-world L100. */
+  { minLevel: 120, baseLevel: 125, bmScale: 3.6 },
+  { minLevel: 150, baseLevel: 140, bmScale: 5.4 },
+  { minLevel: 180, baseLevel: 155, bmScale: 8 },
+  { minLevel: 210, baseLevel: 175, bmScale: 11.5 },
 ] as const;
 
 function buildHalls(): DungeonHall[] {
@@ -109,6 +119,7 @@ function buildHalls(): DungeonHall[] {
     const flavor = TYPE_MOBS[type];
     HALL_BRACKETS.forEach((b, i) => {
       const tier = i + 1;
+      const scale = "bmScale" in b && b.bmScale ? b.bmScale : 1;
       halls.push({
         id: `dung-${type}-${b.minLevel}`,
         type,
@@ -116,10 +127,11 @@ function buildHalls(): DungeonHall[] {
         blurb: `Ур. ${b.minLevel}+ · ${DUNGEON_TYPE_BLURB[type]}`,
         minLevel: b.minLevel,
         baseLevel: b.baseLevel,
+        bmScale: scale > 1 ? scale : undefined,
         accent: TYPE_ACCENT[type],
         mobNames: flavor.mobs,
         bossName: flavor.boss,
-        threat: 1.12 + i * 0.055,
+        threat: i <= 10 ? 1.12 + i * 0.055 : 1.67 + (i - 10) * 0.025,
         rates: { ...TYPE_RATES[type] },
       });
     });
@@ -128,7 +140,23 @@ function buildHalls(): DungeonHall[] {
 }
 
 function roman(n: number) {
-  const map = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"];
+  const map = [
+    "I",
+    "II",
+    "III",
+    "IV",
+    "V",
+    "VI",
+    "VII",
+    "VIII",
+    "IX",
+    "X",
+    "XI",
+    "XII",
+    "XIII",
+    "XIV",
+    "XV",
+  ];
   return map[n - 1] ?? String(n);
 }
 
@@ -145,10 +173,13 @@ export function hallsForType(type: DungeonType) {
 /**
  * Recommended BM for a hall — sits above open-world commons of the same level.
  * Uses rich-tier need × threat ramp so invested same-level kits are "ok", not free farm.
+ * Post-100 halls also apply bmScale (overboost ladder).
  */
 export function dungeonRecommendedBm(hall: DungeonHall) {
   const threatMult = 1 + (hall.threat - 1) * 0.9;
-  return Math.round(spotRequiredBm(hall.baseLevel, "rich", "normal") * threatMult);
+  return Math.round(
+    spotRequiredBm(hall.baseLevel, "rich", "normal") * threatMult * (hall.bmScale ?? 1),
+  );
 }
 
 /** Soft comfort line — below this, expect deaths (bm offense/defense punish harder). */
@@ -170,6 +201,8 @@ export function hallAsLocation(hall: DungeonHall): LocationDef {
     kind: "normal",
     threat: hall.threat,
     rarityBias: hall.rates.rarityBias,
+    /** Must match recommended BM — otherwise scaled halls stay level-curve sponges. */
+    bmScale: hall.bmScale,
   };
 }
 

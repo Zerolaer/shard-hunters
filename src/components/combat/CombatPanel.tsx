@@ -16,6 +16,11 @@ import {
   isDungeonLocationId,
 } from "@/lib/game/dungeons";
 import { isTowerLocationId, TOWER_MILESTONE, towerRecommendedBm } from "@/lib/game/tower";
+import {
+  BOSS_DEF_BY_ID,
+  bossRecommendedBm,
+  isBossLocationId,
+} from "@/lib/game/bosses";
 import { formatFullDigits } from "@/lib/game/formulas";
 import { FARM_SPOT_BY_ID } from "@/lib/game/spots";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
@@ -41,6 +46,7 @@ export function CombatPanel() {
   const prog = useGameStore((s) => s.progression.locations[s.combat.locationId]);
   const dungeon = useGameStore((s) => s.dungeon);
   const tower = useGameStore((s) => s.tower);
+  const bosses = useGameStore((s) => s.bosses);
   const challengeBoss = useGameStore((s) => s.challengeBoss);
   const leaveDungeon = useGameStore((s) => s.leaveDungeon);
   const autoBattle = useGameStore((s) => s.settings.autoBattle);
@@ -52,8 +58,10 @@ export function CombatPanel() {
   const loc = LOCATION_BY_ID[locationId];
   const spot = FARM_SPOT_BY_ID[spotId];
   const inTower = !!tower?.active || isTowerLocationId(locationId);
+  const inBossArena = !!bosses?.active || isBossLocationId(locationId);
+  const bossDef = bosses?.active?.defId ? BOSS_DEF_BY_ID[bosses.active.defId] : null;
   const inHourlyDungeon = !!dungeon?.active;
-  const inDungeon = inTower || inHourlyDungeon || isDungeonLocationId(locationId);
+  const inDungeon = inTower || inBossArena || inHourlyDungeon || isDungeonLocationId(locationId);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -74,11 +82,17 @@ export function CombatPanel() {
   const enemyHits = texts.filter((t) => !t.isPlayerTarget);
   const playerHits = texts.filter((t) => t.isPlayerTarget);
   const locBm = loc ? locationRecommendedBm(loc) : 0;
-  const spotBm = inTower ? towerRecommendedBm(tower?.floor ?? 1) : (spot?.requiredBm ?? locBm);
+  const spotBm = inTower
+    ? towerRecommendedBm(tower?.floor ?? 1)
+    : inBossArena && bossDef
+      ? bossRecommendedBm(bossDef)
+      : (spot?.requiredBm ?? locBm);
   const enemyBm = monster
     ? monster.isPvp
       ? expectedBm(monster.level)
-      : Math.round(spotBm * (monster.isBoss ? 1.55 : 1))
+      : inTower || inBossArena
+        ? spotBm
+        : Math.round(spotBm * (monster.isBoss ? 1.55 : 1))
     : 0;
   const dungeonRemain = dungeonRemainingMs(dungeon?.active, now);
 
@@ -92,6 +106,16 @@ export function CombatPanel() {
             {inTower ? (
               <span className="ml-2 font-sans text-xs font-normal text-[#fb7185]">
                 Башня · этаж {floor}
+              </span>
+            ) : inBossArena ? (
+              <span className="ml-2 font-sans text-xs font-normal text-[#f59e0b]">
+                {bossDef
+                  ? bossDef.kind === "world"
+                    ? "Мировой босс"
+                    : bossDef.kind === "field"
+                      ? "Полевой босс"
+                      : `Сюжет · гл. ${bossDef.chapter ?? 1}`
+                  : "Арена боссов"}
               </span>
             ) : inDungeon ? (
               <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
@@ -171,6 +195,12 @@ export function CombatPanel() {
                 {tower?.bestFloor ? ` · рекорд ${tower.bestFloor}` : ""}
                 {floor % TOWER_MILESTONE === 0 ? " · особая награда" : ` · ${TOWER_MILESTONE - (floor % TOWER_MILESTONE)} до награды`}
               </span>
+            ) : inBossArena ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-[#f59e0b]/30 bg-[#f59e0b]/10 px-2 py-1 text-[11px] tabular-nums text-[#fbbf24]">
+                <Crown className="h-3.5 w-3.5" />
+                {bossDef?.name ?? "Босс"}
+                {bossDef ? ` · ${formatFullDigits(bossRecommendedBm(bossDef))} БМ` : ""}
+              </span>
             ) : inHourlyDungeon && dungeon?.active ? (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-2 py-1 text-[11px] tabular-nums text-[var(--accent)]">
                 <Timer className="h-3.5 w-3.5" />
@@ -201,7 +231,7 @@ export function CombatPanel() {
 
         <div aria-hidden className="max-lg:hidden" />
 
-        {inTower || inHourlyDungeon ? (
+        {inTower || inBossArena || inHourlyDungeon ? (
           <button
             type="button"
             onClick={() => leaveDungeon()}
@@ -209,7 +239,9 @@ export function CombatPanel() {
             title={
               inTower
                 ? "Выход сохраняет этаж. Можно вернуться."
-                : "Выход ставит таймер на паузу. Можно вернуться сегодня."
+                : inBossArena
+                  ? "Выход с арены боссов."
+                  : "Выход ставит таймер на паузу. Можно вернуться сегодня."
             }
           >
             <DoorOpen className="h-3.5 w-3.5" />
@@ -266,7 +298,9 @@ export function CombatPanel() {
                 variant="enemy"
                 floaters={enemyHits}
               />
-              <EffectPills effects={monsterEffects} kind="debuff" dense={dense} singleLine />
+              <div className={cn("combat-debuff-slot mt-auto", dense && "is-dense")}>
+                <EffectPills effects={monsterEffects} kind="debuff" dense={dense} singleLine />
+              </div>
             </>
           ) : (
             <div className="py-2 text-sm text-[#6a7c8c]">Нет цели</div>

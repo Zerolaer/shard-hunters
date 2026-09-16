@@ -23,24 +23,34 @@ export function EchoCraftPanel() {
   const [lastRarity, setLastRarity] = useState<EchoChestRarity | null>(null);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="es-plate flex items-start gap-2.5 p-3">
-        <Anvil className="mt-0.5 h-4 w-4 shrink-0 text-[#c084fc]" />
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-[13px] text-white">Сундуки эха</div>
-          <p className="mt-0.5 text-[11px] leading-snug text-[#8aa0b4]">
-            {ECHO_SHARD_PLURAL} падают с любого врага. Сундук выдаёт случайный предмет{" "}
-            <span className="text-white/80">ур. {level}</span>
-            {classId ? " с уклоном в ваш класс" : ""}.
-          </p>
+    <div className="es-plate overflow-hidden p-0">
+      <div className="relative border-b border-white/8 px-4 py-4">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={{
+            background:
+              "radial-gradient(ellipse at 20% 30%, rgba(228,195,106,0.18), transparent 55%), radial-gradient(ellipse at 80% 70%, rgba(46,229,157,0.08), transparent 50%)",
+          }}
+        />
+        <div className="relative flex items-start gap-3">
+          <div className="es-slot flex h-14 w-14 shrink-0 items-center justify-center">
+            <Anvil className="h-6 w-6 text-[#e4c36a]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-display text-[15px] text-white">Кузница эха</div>
+            <p className="mt-0.5 text-[11px] text-[#8aa0b4]">
+              Сундук → предмет ур. {level}
+              {classId ? " · уклон в класс" : ""}
+            </p>
+          </div>
+          <span className="relative inline-flex items-center gap-1 rounded-md border border-[#e4c36a]/30 bg-[#e4c36a]/10 px-2.5 py-1.5 text-[12px] tabular-nums text-[#f0d78c]">
+            <Sparkles className="h-3.5 w-3.5" />
+            {formatNumber(shards)}
+          </span>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-md border border-[#c084fc]/30 bg-[#c084fc]/10 px-2 py-1 text-[11px] tabular-nums text-[#e9d5ff]">
-          <Sparkles className="h-3 w-3" />
-          {formatNumber(shards)}
-        </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-1.5">
+      <div className="grid gap-2 p-3 sm:grid-cols-2">
         {ECHO_CHESTS.map((chest) => {
           const can = shards >= chest.cost;
           const accent = RARITY_COLOR[chest.rarity];
@@ -55,47 +65,36 @@ export function EchoCraftPanel() {
                 setMessage(res.message);
               }}
               className={cn(
-                "es-plate flex items-center gap-3 p-2.5 text-left transition",
-                can ? "hover:border-white/20" : "opacity-50",
+                "es-well flex items-center gap-3 p-3 text-left transition",
+                can ? "hover:border-white/18" : "opacity-45",
                 lastRarity === chest.rarity && message ? "border-white/20" : "",
               )}
-              style={{ borderColor: can ? `${accent}55` : undefined }}
+              style={{ borderColor: can ? `${accent}44` : undefined }}
             >
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border"
                 style={{
                   color: accent,
-                  borderColor: `${accent}66`,
-                  background: `${accent}18`,
+                  borderColor: `${accent}55`,
+                  background: `${accent}14`,
                 }}
               >
-                <Anvil className="h-4 w-4" />
+                <Anvil className="h-5 w-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-[13px] text-white">{chest.title}</span>
-                  <span className="text-[10px] uppercase tracking-wide" style={{ color: accent }}>
-                    {RARITY_LABEL[chest.rarity]}
-                  </span>
+                <div className="font-display text-[13px] text-white">{chest.title}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wide" style={{ color: accent }}>
+                  {RARITY_LABEL[chest.rarity]}
                 </div>
-                <div className="text-[10px] text-[#8aa0b4]">{chest.hint}</div>
+                <div className="mt-1 text-[11px] tabular-nums text-[#8aa0b4]">
+                  {chest.cost} {ECHO_SHARD_PLURAL.toLowerCase()}
+                </div>
               </div>
-              <span
-                className="shrink-0 text-[11px] font-semibold tabular-nums"
-                style={{ color: can ? accent : "#8aa0b4" }}
-              >
-                {chest.cost}
-              </span>
             </button>
           );
         })}
       </div>
-
-      {message ? (
-        <p className="text-[11px] leading-snug text-white/75">{message}</p>
-      ) : (
-        <p className="text-[11px] text-[#8aa0b4]">Соберите осколки в сумке и откройте сундук.</p>
-      )}
+      {message ? <p className="border-t border-white/8 px-4 py-2.5 text-[11px] text-white/70">{message}</p> : null}
     </div>
   );
 }
