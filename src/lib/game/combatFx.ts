@@ -4,7 +4,27 @@ import type { CombatLogEntry, FloatingText, GameData, LogKind } from "./types";
 
 type Draft = GameData;
 
+/** Hit/loot spam during catch-up would freeze the tab and blow the log cap. */
+let suppressFx = 0;
+
+const CATCHUP_LOG: Partial<Record<LogKind, true>> = {
+  death: true,
+  system: true,
+  pvp: true,
+  enhance: true,
+};
+
+export function withSuppressedCombatFx<T>(fn: () => T): T {
+  suppressFx += 1;
+  try {
+    return fn();
+  } finally {
+    suppressFx -= 1;
+  }
+}
+
 export function pushLog(state: Draft, kind: LogKind, text: string) {
+  if (suppressFx > 0 && !CATCHUP_LOG[kind]) return;
   state.combat.log.push({ id: uid(), kind, text });
   if (state.combat.log.length > COMBAT_LOG_CAP) {
     state.combat.log.splice(0, state.combat.log.length - COMBAT_LOG_CAP);
@@ -15,6 +35,7 @@ export function pushFloater(
   state: Draft,
   opts: Omit<FloatingText, "id" | "spawnedAt" | "offset"> & { spawnedAt?: number },
 ) {
+  if (suppressFx > 0) return;
   state.combat.floatingTexts.push({
     id: uid(),
     spawnedAt: opts.spawnedAt ?? Date.now(),

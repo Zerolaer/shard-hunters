@@ -4,8 +4,39 @@ import { useEffect, useRef } from "react";
 import { flushCloudSave } from "@/lib/auth/accounts";
 import { useGameStore } from "@/store/useGameStore";
 
-/** Longest single tick the combat loop will resolve; beyond this it is offline time. */
-const MAX_CATCHUP_SECONDS = 2;
+/** Show the offline summary banner (and quiet combat catch-up) past this gap. */
+const OFFLINE_REPORT_SECONDS = 8;
+
+function pulse() {
+  const elapsed = (Date.now() - useGameStore.getState().meta.lastTick) / 1000;
+  if (elapsed < 0.03) return;
+  try {
+    if (elapsed >= OFFLINE_REPORT_SECONDS) {
+      useGameStore.getState().applyOfflineProgress();
+    } else {
+      useGameStore.getState().tick(elapsed);
+    }
+  } catch (err) {
+    console.error("[Shard Hunters] tick failed", err);
+  }
+}
+
+/** Dedicated workers keep 250ms–1s timers in background tabs; the page interval does not. */
+function startHeartbeatWorker(onPulse: () => void) {
+  if (typeof Worker === "undefined") return () => {};
+  try {
+    const src = "setInterval(function(){postMessage(0)},250);";
+    const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    const worker = new Worker(url);
+    worker.onmessage = () => onPulse();
+    return () => {
+      worker.terminate();
+      URL.revokeObjectURL(url);
+    };
+  } catch {
+    return () => {};
+  }
+}
 
 export function GameTicker({
   onReady,
@@ -59,36 +90,33 @@ export function GameTicker({
     if (!ticking) return;
     useGameStore.getState().applyOfflineProgress();
     flushCloudSave();
-    let last = performance.now();
-    const step = () => {
-      const t = performance.now();
-      // Background tabs throttle setInterval to roughly 1 Hz. Passing the real
-      // elapsed time (rather than clamping to a frame) is what keeps a minimised
-      // tab earning instead of silently losing ~90% of its progress; the tick
-      // loop resolves multiple swings per call to stay correct at this dt.
-      const dt = Math.min(MAX_CATCHUP_SECONDS, (t - last) / 1000);
-      last = t;
-      try {
-        useGameStore.getState().tick(dt);
-      } catch (err) {
-        console.error("[Shard Hunters] tick failed", err);
-      }
+
+    const interval = window.setInterval(pulse, 50);
+    const stopWorker = startHeartbeatWorker(pulse);
+
+    const onVisible = () => {
+      pulse();
+      flushCloudSave();
     };
-    const interval = window.setInterval(step, 50);
+    const onHidden = () => flushCloudSave();
     const onVis = () => {
-      // A fully suspended tab can be gone for hours; that window is offline
-      // progress, not combat, so hand it to the offline path rather than
-      // replaying it or throwing it away.
-      if (document.visibilityState === "visible") {
-        useGameStore.getState().applyOfflineProgress();
-        flushCloudSave();
-      }
-      last = performance.now();
+      if (document.visibilityState === "visible") onVisible();
+      else onHidden();
     };
+
     document.addEventListener("visibilitychange", onVis);
+    document.addEventListener("freeze", onHidden);
+    document.addEventListener("resume", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onVisible);
     return () => {
       window.clearInterval(interval);
+      stopWorker();
       document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("freeze", onHidden);
+      document.removeEventListener("resume", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onVisible);
     };
   }, [ticking]);
 

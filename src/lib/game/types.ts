@@ -472,6 +472,11 @@ export interface Settings {
 export interface OfflineReport {
   seconds: number;
   ore: number;
+  gold?: number;
+  xp?: number;
+  kills?: number;
+  levels?: number;
+  died?: boolean;
 }
 
 export interface GameMeta {

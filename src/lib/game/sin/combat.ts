@@ -517,8 +517,10 @@ export function tickSinEffects(state: Draft, dt: number): boolean {
 
   if (sin.poison > 0) {
     sin.poisonAcc += dt;
-    if (sin.poisonAcc >= POISON_TICK) {
+    let poisonSteps = 0;
+    while (sin.poison > 0 && sin.poisonAcc >= POISON_TICK && poisonSteps < 16) {
       sin.poisonAcc -= POISON_TICK;
+      poisonSteps += 1;
       const tick = Math.max(
         1,
         Math.round(
@@ -547,7 +549,10 @@ export function tickSinEffects(state: Draft, dt: number): boolean {
         sin.poisonTtl = 0;
         sin.poisonAcc = 0;
       }
-      if (monster.hp <= 0) killed = true;
+      if (monster.hp <= 0) {
+        killed = true;
+        break;
+      }
     }
   } else {
     sin.poisonAcc = 0;
@@ -572,14 +577,19 @@ export function tickSinEffects(state: Draft, dt: number): boolean {
 
   if (!killed && sin.clone > 0) {
     sin.cloneAcc += dt;
-    if (sin.cloneAcc >= 2) {
+    let cloneSteps = 0;
+    while (sin.clone > 0 && sin.cloneAcc >= 2 && cloneSteps < 8) {
       sin.cloneAcc -= 2;
+      cloneSteps += 1;
       const echo = cloneEchoHit(state, derived);
       const res = dealHit(state, derived, echo.amount, derived.critChance * 0.7, echo.label);
       if (state.sinBuild.path === "venom") {
         sin.poison = clampResource(sin.poison + 1, poisonCap(ks.bottomless, hasSynergy(syn, "set-poison-3")));
       }
-      if (res.killed) killed = true;
+      if (res.killed) {
+        killed = true;
+        break;
+      }
     }
   }
 

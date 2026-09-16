@@ -1,6 +1,6 @@
 import { bmDefenseMult, bmOffenseMult, expectedBm, gcdLength, REGEN } from "./balance";
 import { syncCombatEffects } from "./combatEffects";
-import { healPlayer, pushFloater, pushLog, registerMiss } from "./combatFx";
+import { healPlayer, pushFloater, pushLog, registerMiss, withSuppressedCombatFx } from "./combatFx";
 import {
   BOSS_BONUS_ITEM_CHANCE,
   KILLS_FOR_BOSS,
@@ -87,6 +87,35 @@ type Draft = GameData;
 
 /** Bounds catch-up work when a throttled or restored tab hands the loop a long dt. */
 const MAX_SWINGS_PER_TICK = 8;
+/** Live frames stay on one pass; anything larger is sliced so skills/DoTs keep up. */
+const CATCHUP_DT = 0.12;
+const CATCHUP_STEP_SHORT = 0.1;
+const CATCHUP_STEP_LONG = 0.2;
+const CATCHUP_LONG_AFTER = 120;
+const OFFLINE_REPORT_SECONDS = 8;
+
+let catchupActive = false;
+let catchupKills = 0;
+
+function swingLimit(dt: number) {
+  return Math.min(64, Math.max(MAX_SWINGS_PER_TICK, Math.ceil(dt * 50) + 2));
+}
+
+function catchupStep(dt: number) {
+  if (dt > 30 * 60) return 0.5;
+  if (dt > CATCHUP_LONG_AFTER) return CATCHUP_STEP_LONG;
+  return CATCHUP_STEP_SHORT;
+}
+
+function lifetimeXp(level: number, xp: number) {
+  let total = xp;
+  for (let i = 1; i < level; i++) total += xpToNext(i);
+  return total;
+}
+
+function finishFrame(state: Draft, skipEffects: boolean) {
+  if (!skipEffects) syncCombatEffects(state);
+}
 
 function firstEmptyInv(state: Draft) {
   return state.inventory.findIndex((x) => x === null);
@@ -266,7 +295,6 @@ export function ensureWorld(state: Draft) {
     state.progression.unlockedLocationIds = ["woods"];
   }
   unlockLocationsByLevel(state, false);
-  tickDungeonSession(state);
   ensureHunters(state);
 }
 
@@ -425,6 +453,7 @@ function onPvpWin(state: Draft) {
 function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
   const monster = state.combat.monster;
   if (!monster) return;
+  if (catchupActive) catchupKills += 1;
   if (monster.isPvp || state.combat.mode === "pvp") {
     onPvpWin(state);
     return;
@@ -763,10 +792,7 @@ export function playerOrePerSec(state: Draft) {
   return ore;
 }
 
-export function applyOffline(state: Draft, now = Date.now()) {
-  const last = state.meta.lastTick || now;
-  const elapsed = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (now - last) / 1000));
-  state.meta.lastTick = now;
+function prepareSave(state: Draft) {
   if (!state.talents) {
     state.talents = {
       points: Math.max(0, state.character.level - 1),
@@ -774,7 +800,6 @@ export function applyOffline(state: Draft, now = Date.now()) {
     };
   }
   ensureWorld(state);
-  tickGuild(state, now);
   if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
   if (!state.combat.mode) state.combat.mode = "pve";
   if (state.combat.wardHits == null) state.combat.wardHits = 0;
@@ -787,60 +812,19 @@ export function applyOffline(state: Draft, now = Date.now()) {
   ensureSin(state);
   if (isPlayingSin(state)) migrateAssassinBuild(state);
   syncAutoSellSettings(state);
-  for (const rarity of RARITIES) {
-    if (isAutoSellEnabled(state, rarity)) flushAutoSellInventory(state, rarity);
-  }
-  syncCombatEffects(state);
-  if (elapsed > 0) {
-    const freshStart = state.character.level <= 1 && state.character.xp === 0 && elapsed > 30;
-    if (!freshStart) simulateHunters(state, elapsed, now);
-  }
-  if (elapsed < 8) {
-    state.meta.pendingOffline = null;
-    return;
-  }
-  const rate = playerOrePerSec(state);
-  const ore = Math.floor(rate * elapsed);
-  state.resources.ore += ore;
-  state.meta.pendingOffline = { seconds: Math.round(elapsed), ore };
-  if (ore > 0) {
-    pushLog(
-      state,
-      "system",
-      `AFK-доход шахт за ${Math.round(elapsed)}с: +${ore} руды осколков`,
-    );
-  }
 }
 
-export function tickGame(state: Draft, dt: number) {
-  const now = Date.now();
-  state.meta.lastTick = now;
-  if (!state.talents) {
-    state.talents = {
-      points: Math.max(0, state.character.level - 1),
-      ranks: state.character.classId === "assassin" ? {} : { "fury-strike": 1 },
-    };
-  }
-  ensureWorld(state);
-  tickGuild(state, now);
-  simulateHunters(state, dt, now);
-  if (!state.combat.spotId) state.combat.spotId = "woods-2-0";
-  if (state.combat.lootlessKills == null) state.combat.lootlessKills = 0;
-  if (!state.combat.playerEffects) state.combat.playerEffects = [];
-  if (!state.combat.monsterEffects) state.combat.monsterEffects = [];
-  if (!state.combat.sin) state.combat.sin = emptySinCombat();
-  if (!state.sinBuild) state.sinBuild = emptySinBuild();
-  ensureSin(state);
-  if (isPlayingSin(state)) migrateAssassinBuild(state);
-  syncAutoSellSettings(state);
-
+function tickFrame(state: Draft, dt: number, skipEffects: boolean) {
   if (!state.combat.monster) {
     spawnNext(state, false);
   }
 
   state.combat.hitFlash = Math.max(0, state.combat.hitFlash - dt);
   state.combat.playerHitFlash = Math.max(0, state.combat.playerHitFlash - dt);
-  state.combat.floatingTexts = state.combat.floatingTexts.filter((f) => now - f.spawnedAt < 1100);
+  if (!skipEffects) {
+    const now = Date.now();
+    state.combat.floatingTexts = state.combat.floatingTexts.filter((f) => now - f.spawnedAt < 1100);
+  }
 
   const derived = statsOf(state);
   if (state.character.hp <= 0 || state.character.hp > derived.maxHp) {
@@ -874,7 +858,7 @@ export function tickGame(state: Draft, dt: number) {
   state.combat.gcd = Math.max(0, (state.combat.gcd ?? 0) - dt);
 
   if (!state.settings.autoBattle || !state.combat.monster) {
-    syncCombatEffects(state);
+    finishFrame(state, skipEffects);
     return;
   }
 
@@ -884,7 +868,7 @@ export function tickGame(state: Draft, dt: number) {
       const d = statsOf(state);
       onKill(state, d.xpBonus, d.dropBonus);
       if (!state.settings.autoBattle) {
-        syncCombatEffects(state);
+        finishFrame(state, skipEffects);
         return;
       }
     }
@@ -896,7 +880,7 @@ export function tickGame(state: Draft, dt: number) {
         onKill(state, d.xpBonus, d.dropBonus);
       }
       if (!state.settings.autoBattle) {
-        syncCombatEffects(state);
+        finishFrame(state, skipEffects);
         return;
       }
     }
@@ -907,7 +891,7 @@ export function tickGame(state: Draft, dt: number) {
       if ((state.combat.skillCd[slot] ?? 0) > 0) continue;
       tryCast(state, slot);
       if (!state.settings.autoBattle) {
-        syncCombatEffects(state);
+        finishFrame(state, skipEffects);
         return;
       }
     }
@@ -916,13 +900,14 @@ export function tickGame(state: Draft, dt: number) {
   // Carry the overshoot instead of zeroing it: at a 0.05 s frame and a short
   // swing timer, dropping the remainder silently costs up to 5% attack speed.
   // Looping also keeps the tick correct when a throttled tab hands us a long dt.
+  const swings = swingLimit(dt);
   state.combat.playerAtkAcc += dt;
-  for (let i = 0; i < MAX_SWINGS_PER_TICK; i++) {
+  for (let i = 0; i < swings; i++) {
     if (state.combat.playerAtkAcc < derived.attackInterval) break;
     state.combat.playerAtkAcc -= derived.attackInterval;
     playerSwing(state, 1);
     if (!state.settings.autoBattle) {
-      syncCombatEffects(state);
+      finishFrame(state, skipEffects);
       return;
     }
     if (!state.combat.monster || state.combat.monster.hp <= 0) break;
@@ -930,20 +915,20 @@ export function tickGame(state: Draft, dt: number) {
 
   const monster = state.combat.monster;
   if (!monster || monster.hp <= 0) {
-    syncCombatEffects(state);
+    finishFrame(state, skipEffects);
     return;
   }
 
   const interval = monster.attackInterval * sinMonsterIntervalMult(state);
   state.combat.monsterAtkAcc += dt;
-  if (state.combat.monsterAtkAcc >= interval) {
-    state.combat.monsterAtkAcc = Math.min(state.combat.monsterAtkAcc - interval, interval);
+  for (let i = 0; i < swings; i++) {
+    if (state.combat.monsterAtkAcc < interval) break;
+    state.combat.monsterAtkAcc -= interval;
     const mit = isPlayingSin(state) ? sinIncomingMultiplier(state) : 1;
     const absorbed = isPlayingSin(state) ? sinOnPlayerHit(state) : { absorbed: false };
     if (absorbed.absorbed) {
       pushLog(state, "skill", "Эхо перехватило удар");
-      syncCombatEffects(state);
-      return;
+      continue;
     }
     const taken = pveBmMults(state, derived).taken;
     let incoming = rollHit(monster.attack * taken, derived.defense, monster.isPvp ? 12 : 6, 150, monster.level);
@@ -965,10 +950,115 @@ export function tickGame(state: Draft, dt: number) {
       incoming.isCrit ? "crit" : "hit",
       `${monster.name} наносит ${incoming.value}${incoming.isCrit ? " (крит)" : ""}`,
     );
-    if (state.character.hp <= 0) onPlayerDeath(state);
+    if (state.character.hp <= 0) {
+      onPlayerDeath(state);
+      break;
+    }
   }
 
+  finishFrame(state, skipEffects);
+}
+
+export function applyOffline(state: Draft, now = Date.now()) {
+  const last = state.meta.lastTick || now;
+  const elapsed = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (now - last) / 1000));
+  prepareSave(state);
+  for (const rarity of RARITIES) {
+    if (isAutoSellEnabled(state, rarity)) flushAutoSellInventory(state, rarity);
+  }
+
+  const freshStart = state.character.level <= 1 && state.character.xp === 0 && elapsed > 30;
+  if (freshStart) {
+    tickGuild(state, now);
+    state.meta.lastTick = Date.now();
+    state.meta.pendingOffline = null;
+    return;
+  }
+
+  if (elapsed < 0.05) {
+    tickGuild(state, now);
+    tickDungeonSession(state, now);
+    syncCombatEffects(state);
+    state.meta.lastTick = Date.now();
+    state.meta.pendingOffline = null;
+    return;
+  }
+
+  const before = {
+    ore: state.resources.ore,
+    gold: state.resources.gold,
+    xp: lifetimeXp(state.character.level, state.character.xp),
+    level: state.character.level,
+    autoBattle: state.settings.autoBattle,
+  };
+  catchupKills = 0;
+  tickGame(state, elapsed);
+
+  if (elapsed < OFFLINE_REPORT_SECONDS) {
+    state.meta.pendingOffline = null;
+    return;
+  }
+
+  const ore = Math.max(0, state.resources.ore - before.ore);
+  const gold = Math.max(0, state.resources.gold - before.gold);
+  const xp = Math.max(0, lifetimeXp(state.character.level, state.character.xp) - before.xp);
+  const levels = Math.max(0, state.character.level - before.level);
+  const kills = catchupKills;
+  const died = before.autoBattle && !state.settings.autoBattle;
+  state.meta.pendingOffline = { seconds: Math.round(elapsed), ore, gold, xp, kills, levels, died };
+
+  const bits: string[] = [];
+  if (kills > 0) bits.push(`${kills} убийств`);
+  if (xp > 0) bits.push(`+${xp} XP`);
+  if (gold > 0) bits.push(`+${gold} золота`);
+  if (ore > 0) bits.push(`+${ore} руды осколков`);
+  if (levels > 0) bits.push(`+${levels} ур.`);
+  if (bits.length) {
+    pushLog(state, "system", `Офлайн-фарм за ${Math.round(elapsed)}с: ${bits.join(", ")}`);
+  } else {
+    pushLog(state, "system", `Вас не было ${Math.round(elapsed)}с.`);
+  }
+  if (died) {
+    pushLog(state, "system", "Авто-бой остановился: персонаж пал, пока вас не было.");
+  }
+}
+
+export function tickGame(state: Draft, dt: number) {
+  if (dt <= 0) return;
+  const wallNow = Date.now();
+  const start = state.meta.lastTick || wallNow;
+  prepareSave(state);
+  tickGuild(state, wallNow);
+  simulateHunters(state, dt, wallNow);
+
+  if (dt <= CATCHUP_DT) {
+    tickDungeonSession(state, wallNow);
+    tickFrame(state, dt, false);
+    state.meta.lastTick = Date.now();
+    return;
+  }
+
+  const step = catchupStep(dt);
+  let remaining = dt;
+  let simNow = start;
+  catchupKills = 0;
+  catchupActive = true;
+  try {
+    withSuppressedCombatFx(() => {
+      while (remaining > 1e-9) {
+        const slice = Math.min(step, remaining);
+        remaining -= slice;
+        simNow += slice * 1000;
+        tickDungeonSession(state, simNow);
+        tickFrame(state, slice, remaining > step);
+      }
+    });
+  } finally {
+    catchupActive = false;
+  }
   syncCombatEffects(state);
+  state.combat.floatingTexts = [];
+  state.meta.lastTick = Date.now();
 }
 
 export function findItem(state: Draft, itemId: string) {
