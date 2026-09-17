@@ -15,6 +15,8 @@ function pulse() {
   const elapsed = (Date.now() - useGameStore.getState().meta.lastTick) / 1000;
   if (elapsed < 0.03) return;
   try {
+    // ≥8s → offline summary path. Shorter gaps still use tick(), but tickGame
+    // caps catch-up per pulse so a 2–7s tab blip cannot fast-forward the HUD.
     if (elapsed >= OFFLINE_REPORT_SECONDS) {
       useGameStore.getState().applyOfflineProgress();
     } else {

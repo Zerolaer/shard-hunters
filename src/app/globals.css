@@ -2072,10 +2072,11 @@ body {
   height: 100%;
   touch-action: none;
   cursor: grab;
+  user-select: none;
 }
 
-.farm-world-map > svg.is-panning {
-  cursor: grab;
+.farm-world-map > svg.is-dragging {
+  cursor: grabbing;
 }
 
 .farm-world-map > svg:active {

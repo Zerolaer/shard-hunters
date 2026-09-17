@@ -30,9 +30,10 @@ import { Crosshair, Lock, Minus, Plus, Swords, X } from "lucide-react";
 
 const VW = 1000;
 const VH = 700;
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 2.8;
+const MIN_ZOOM = 0.55;
+const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.22;
+const FIT_ZOOM = 1;
 
 /** Deterministic jitter so locations fan out around their region pin. */
 function locPin(regionX: number, regionY: number, index: number, total: number) {
@@ -123,8 +124,9 @@ export function FarmMap() {
   const [pendingSpotId, setPendingSpotId] = useState<string | null>(null);
   const [hoverLocId, setHoverLocId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(FIT_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef(zoom);
@@ -135,6 +137,7 @@ export function FarmMap() {
     lastY: number;
     moved: boolean;
   } | null>(null);
+  const suppressClickRef = useRef(false);
   const pinchRef = useRef<{
     dist: number;
     zoom: number;
@@ -244,13 +247,19 @@ export function FarmMap() {
   }
 
   function clampPan(nextZoom: number, nextPan: { x: number; y: number }) {
-    if (nextZoom <= 1.02) return { x: 0, y: 0 };
-    const maxX = (VW / 2) * (nextZoom - 1) + 48;
-    const maxY = (VH / 2) * (nextZoom - 1) + 48;
+    // Allow dragging whenever content overflows (or a small nudge when zoomed out).
+    const pad = 56;
+    const maxX = Math.max(pad * 0.5, (VW / 2) * Math.max(0, nextZoom - 1) + pad);
+    const maxY = Math.max(pad * 0.5, (VH / 2) * Math.max(0, nextZoom - 1) + pad);
     return {
       x: clamp(nextPan.x, -maxX, maxX),
       y: clamp(nextPan.y, -maxY, maxY),
     };
+  }
+
+  function resetView() {
+    setZoom(FIT_ZOOM);
+    setPan({ x: 0, y: 0 });
   }
 
   function applyZoom(nextZoom: number, pivot?: { x: number; y: number }) {
@@ -297,7 +306,8 @@ export function FarmMap() {
 
   function onMapPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
-    if ((e.target as Element).closest?.(".farm-map-node")) return;
+    // Drag from anywhere (including over pins); click still opens a city if we barely moved.
+    suppressClickRef.current = false;
     dragRef.current = {
       pointerId: e.pointerId,
       lastX: e.clientX,
@@ -312,8 +322,12 @@ export function FarmMap() {
     if (!drag || drag.pointerId !== e.pointerId) return;
     const dx = e.clientX - drag.lastX;
     const dy = e.clientY - drag.lastY;
-    if (!drag.moved && dx * dx + dy * dy < 9) return;
-    drag.moved = true;
+    if (!drag.moved && dx * dx + dy * dy < 16) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      suppressClickRef.current = true;
+      setDragging(true);
+    }
     drag.lastX = e.clientX;
     drag.lastY = e.clientY;
 
@@ -334,7 +348,22 @@ export function FarmMap() {
   }
 
   function onMapPointerUp(e: React.PointerEvent) {
-    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
+    if (dragRef.current?.pointerId !== e.pointerId) return;
+    const moved = dragRef.current.moved;
+    dragRef.current = null;
+    setDragging(false);
+    if (moved) {
+      // Swallow the click that follows a pan gesture.
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+  }
+
+  function onPinActivate(id: string) {
+    if (suppressClickRef.current || dragRef.current?.moved) return;
+    openLocation(id);
   }
 
   function onMapTouchStart(e: React.TouchEvent) {
@@ -377,14 +406,18 @@ export function FarmMap() {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VW} ${VH}`}
-          preserveAspectRatio="xMidYMid slice"
+          preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label="Карта охоты"
-          className={cn(zoom > 1.02 && "is-panning")}
+          className={cn(dragging && "is-dragging")}
           onPointerDown={onMapPointerDown}
           onPointerMove={onMapPointerMove}
           onPointerUp={onMapPointerUp}
           onPointerCancel={onMapPointerUp}
+          onDoubleClick={(e) => {
+            e.preventDefault();
+            resetView();
+          }}
           onTouchStart={onMapTouchStart}
           onTouchMove={onMapTouchMove}
           onTouchEnd={onMapTouchEnd}
@@ -451,12 +484,12 @@ export function FarmMap() {
                   transform={`translate(${x}, ${y})`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    openLocation(l.id);
+                    onPinActivate(l.id);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      openLocation(l.id);
+                      onPinActivate(l.id);
                     }
                   }}
                   onMouseEnter={() => setHoverLocId(l.id)}
@@ -534,21 +567,23 @@ export function FarmMap() {
             className="farm-map-zoom-btn"
             aria-label="Отдалить"
             disabled={zoom <= MIN_ZOOM + 0.01}
-            onClick={() => {
-              if (zoomRef.current - ZOOM_STEP <= MIN_ZOOM + 0.01) {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              } else {
-                zoomBy(-ZOOM_STEP);
-              }
-            }}
+            onClick={() => zoomBy(-ZOOM_STEP)}
           >
             <Minus className="h-3.5 w-3.5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="farm-map-zoom-btn"
+            aria-label="Показать всю карту"
+            title="Сбросить вид"
+            onClick={resetView}
+          >
+            <Crosshair className="h-3.5 w-3.5" aria-hidden />
           </button>
         </div>
 
         <div className="farm-map-hint" aria-hidden>
-          Клик по городу — выбор спота · колесо / pinch — масштаб
+          Тяни карту мышью · колесо — масштаб · двойной клик — вся карта
         </div>
 
         <button

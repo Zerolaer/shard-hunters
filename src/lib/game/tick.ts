@@ -135,8 +135,20 @@ const CATCHUP_STEP_SHORT = 0.1;
 const CATCHUP_STEP_LONG = 0.2;
 const CATCHUP_LONG_AFTER = 120;
 const OFFLINE_REPORT_SECONDS = 8;
-/** Cap wall time per catch-up call so login/tab-restore cannot freeze the UI for seconds. */
-const CATCHUP_WALL_MS = 12;
+/**
+ * Cap wall time per catch-up call so login/tab-restore cannot freeze the UI.
+ * Must use performance.now() — Date.now() is too coarse and let thousands of
+ * slices run before the clock moved, replaying seconds of combat in one frame.
+ */
+const CATCHUP_WALL_MS = 6;
+/**
+ * Max game-seconds credited per live catch-up pulse. Without this, a 2–7s tab
+ * blip (below the offline banner threshold) fast-forwarded at 100×+: skills,
+ * combo/poison/shade and the whole HUD jerked while mobs melted.
+ */
+const CATCHUP_GAME_SEC_LIVE = 0.2;
+/** Offline/login may chew through more sim time per applyOffline call. */
+const CATCHUP_GAME_SEC_OFFLINE = 2.5;
 
 let catchupActive = false;
 let catchupKills = 0;
@@ -1367,7 +1379,7 @@ export function applyOffline(state: Draft, now = Date.now()) {
   };
   catchupKills = 0;
   const tickStartedAt = state.meta.lastTick || now;
-  tickGame(state, elapsed);
+  tickGame(state, elapsed, { maxGameSec: CATCHUP_GAME_SEC_OFFLINE });
   // Chunked catch-up: more work remains — skip the summary until we finish.
   const stillBehind = Math.max(0, (Date.now() - (state.meta.lastTick || Date.now())) / 1000);
   if (stillBehind > 1) {
@@ -1406,15 +1418,19 @@ export function applyOffline(state: Draft, now = Date.now()) {
   }
 }
 
-export function tickGame(state: Draft, dt: number) {
+export function tickGame(
+  state: Draft,
+  dt: number,
+  opts?: { maxGameSec?: number },
+) {
   if (dt <= 0) return;
   const wallNow = Date.now();
   const start = state.meta.lastTick || wallNow;
   prepareSave(state);
   tickGuild(state, wallNow);
-  simulateHunters(state, dt, wallNow);
 
   if (dt <= CATCHUP_DT) {
+    simulateHunters(state, dt, wallNow);
     tickDungeonSession(state, wallNow);
     tickFrame(state, dt, false);
     state.meta.lastTick = Date.now();
@@ -1422,17 +1438,20 @@ export function tickGame(state: Draft, dt: number) {
   }
 
   const step = catchupStep(dt);
+  const maxGameSec = opts?.maxGameSec ?? CATCHUP_GAME_SEC_LIVE;
   let remaining = dt;
   let simNow = start;
+  let simulated = 0;
   catchupKills = 0;
   catchupActive = true;
   try {
     withSuppressedCombatFx(() => {
-      const wallStart = Date.now();
-      while (remaining > 1e-9) {
-        if (Date.now() - wallStart > CATCHUP_WALL_MS) break;
-        const slice = Math.min(step, remaining);
+      const wallStart = performance.now();
+      while (remaining > 1e-9 && simulated < maxGameSec) {
+        if (performance.now() - wallStart > CATCHUP_WALL_MS) break;
+        const slice = Math.min(step, remaining, maxGameSec - simulated);
         remaining -= slice;
+        simulated += slice;
         simNow += slice * 1000;
         tickDungeonSession(state, simNow);
         tickFrame(state, slice, remaining > step);
@@ -1441,6 +1460,9 @@ export function tickGame(state: Draft, dt: number) {
   } finally {
     catchupActive = false;
   }
+  // Only credit hunters for time we actually simulated — otherwise partial
+  // catch-up pulses would replay the unpaid gap on every call.
+  if (simulated > 0) simulateHunters(state, simulated, wallNow);
   syncCombatEffects(state);
   state.combat.floatingTexts = [];
   if (remaining <= 1e-9) {
