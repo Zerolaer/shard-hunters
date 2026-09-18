@@ -177,13 +177,26 @@ const OFFLINE_REPORT_SECONDS = 8;
  */
 const CATCHUP_WALL_MS = 6;
 /**
- * Max game-seconds credited per live catch-up pulse. Without this, a 2–7s tab
- * blip (below the offline banner threshold) fast-forwarded at 100×+: skills,
- * combo/poison/shade and the whole HUD jerked while mobs melted.
+ * Max game-seconds per pulse while the tab is visible.
+ * Must stay ≈ foreground pulse (50ms): 0.2s/pulse was 4× realtime and made
+ * skill CDs / GCD / sin timers visibly melt and "jerk" after any short lag.
  */
-const CATCHUP_GAME_SEC_LIVE = 0.2;
-/** Offline/login may chew through more sim time per applyOffline call. */
+const CATCHUP_GAME_SEC_LIVE = 0.055;
+/**
+ * Background worker interval is 250ms — live cap above would grow debt forever
+ * (0.2 sim < 0.25 wall). Hidden tabs may catch up faster; nobody watches the HUD.
+ */
+const CATCHUP_GAME_SEC_HIDDEN = 0.5;
+/** Boot / true offline catch-up when the document is hidden (or forced). */
 const CATCHUP_GAME_SEC_OFFLINE = 2.5;
+
+function catchupGameSecCap(explicit?: number) {
+  if (explicit != null) return explicit;
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return CATCHUP_GAME_SEC_HIDDEN;
+  }
+  return CATCHUP_GAME_SEC_LIVE;
+}
 
 let catchupActive = false;
 let catchupKills = 0;
@@ -1541,7 +1554,11 @@ function tickFrame(state: Draft, dt: number, skipEffects: boolean) {
   finishFrame(state, skipEffects);
 }
 
-export function applyOffline(state: Draft, now = Date.now()) {
+export function applyOffline(
+  state: Draft,
+  now = Date.now(),
+  opts?: { maxGameSec?: number },
+) {
   const last = state.meta.lastTick || now;
   const elapsed = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (now - last) / 1000));
   prepareSave(state);
@@ -1575,7 +1592,14 @@ export function applyOffline(state: Draft, now = Date.now()) {
   };
   catchupKills = 0;
   const tickStartedAt = state.meta.lastTick || now;
-  tickGame(state, elapsed, { maxGameSec: CATCHUP_GAME_SEC_OFFLINE });
+  // Visible mid-play: soft cap so skill CDs do not jump 2.5s in one frame.
+  // Hidden / explicit boot: larger chunks so long AFK still finishes quickly.
+  const maxGameSec =
+    opts?.maxGameSec ??
+    (typeof document !== "undefined" && document.visibilityState === "visible"
+      ? CATCHUP_GAME_SEC_LIVE
+      : CATCHUP_GAME_SEC_OFFLINE);
+  tickGame(state, elapsed, { maxGameSec });
   // Chunked catch-up: more work remains — skip the summary until we finish.
   const stillBehind = Math.max(0, (Date.now() - (state.meta.lastTick || Date.now())) / 1000);
   if (stillBehind > 1) {
@@ -1634,7 +1658,7 @@ export function tickGame(
   }
 
   const step = catchupStep(dt);
-  const maxGameSec = opts?.maxGameSec ?? CATCHUP_GAME_SEC_LIVE;
+  const maxGameSec = catchupGameSecCap(opts?.maxGameSec);
   let remaining = dt;
   let simNow = start;
   let simulated = 0;

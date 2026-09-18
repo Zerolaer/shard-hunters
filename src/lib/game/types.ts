@@ -533,8 +533,7 @@ export type RightTab =
   | "dungeons"
   | "tower"
   | "bosses"
-  | "guild"
-  | "ranking";
+  | "guild";
 
 export type BossKind = "world" | "field" | "personal";
 

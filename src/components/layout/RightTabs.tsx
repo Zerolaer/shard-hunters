@@ -12,7 +12,6 @@ import { DungeonsPanel } from "@/components/territories/DungeonsPanel";
 import { TowerPanel } from "@/components/territories/TowerPanel";
 import { BossesPanel } from "@/components/territories/BossesPanel";
 import { GuildPanel } from "@/components/territories/GuildPanel";
-import { RankingPanel } from "@/components/territories/RankingPanel";
 import { useUiStore } from "@/store/useUiStore";
 import { tabById } from "./navTabs";
 
@@ -33,10 +32,6 @@ export function RightTabs() {
         ) : tab === "build" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <BuildPanel />
-          </div>
-        ) : tab === "ranking" ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <RankingPanel />
           </div>
         ) : tab === "tower" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

@@ -28,6 +28,7 @@ import { hydrateCombatLogPref, useUiStore } from "@/store/useUiStore";
 import { LevelBadge } from "@/components/layout/LevelBadge";
 import { CombatLog } from "./CombatLog";
 import { EffectPills } from "./EffectPills";
+import { FloatingDamage } from "./FloatingDamage";
 import { HealthBar } from "./HealthBar";
 import { MonsterVisual } from "./MonsterVisual";
 import { SkillBar } from "./SkillBar";
@@ -243,12 +244,13 @@ export function CombatPanel() {
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div
           className={cn(
-            "combat-side combat-side-enemy flex flex-col",
+            "combat-side combat-side-enemy relative flex flex-col",
             dense ? "shrink-0 gap-1 p-2" : "min-h-0 flex-1 gap-2.5 p-3",
             !dense && hitFlash > 0 && "monster-hit",
             monster?.isPvp ? "is-pvp" : monster?.isBoss ? "is-boss" : "is-mob",
           )}
         >
+          <FloatingDamage texts={enemyHits} />
           {monster ? (
             <>
               <div className={cn("flex min-w-0 items-center", dense ? "gap-3" : "gap-2.5")}>
@@ -284,7 +286,6 @@ export function CombatPanel() {
                 max={monster.maxHp}
                 label={dense ? undefined : "HP"}
                 variant="enemy"
-                floaters={enemyHits}
               />
               <div className={cn("combat-debuff-slot mt-auto", dense && "is-dense")}>
                 <EffectPills effects={monsterEffects} kind="debuff" dense={dense} singleLine />
@@ -305,11 +306,12 @@ export function CombatPanel() {
 
         <div
           className={cn(
-            "combat-side combat-side-player flex flex-col",
+            "combat-side combat-side-player relative flex flex-col",
             dense ? "min-h-0 flex-1 gap-2 p-2.5" : "min-h-0 flex-1 gap-2.5 p-3",
             playerHit > 0 && "player-hit",
           )}
         >
+          <FloatingDamage texts={playerHits} />
           <div className={cn("flex min-w-0 items-center", dense ? "gap-3" : "gap-2.5")}>
             <LevelBadge level={character.level} shape="circle" size="md" />
             <div className="min-w-0 flex-1">
@@ -334,7 +336,6 @@ export function CombatPanel() {
             max={derived.maxHp}
             label={dense ? undefined : "HP"}
             variant="player"
-            floaters={playerHits}
           />
           <EffectPills effects={playerEffects} kind="buff" dense={dense} />
           <SinResourceBar />

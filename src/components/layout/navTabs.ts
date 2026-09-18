@@ -7,7 +7,6 @@ import {
   Shield,
   Sparkles,
   TowerControl,
-  Trophy,
   User,
   Wrench,
 } from "lucide-react";
@@ -24,7 +23,6 @@ export const RIGHT_TABS: { id: RightTab; label: string; icon: typeof User; hotke
   { id: "tower", label: "Башня Испытаний", icon: TowerControl, hotkey: "8" },
   { id: "bosses", label: "Боссы", icon: Crown, hotkey: "B" },
   { id: "guild", label: "Гильдия", icon: Shield, hotkey: "9" },
-  { id: "ranking", label: "Рейтинг", icon: Trophy, hotkey: "0" },
 ];
 
 export const MOBILE_PRIMARY_TABS: RightTab[] = ["character", "inventory", "world"];
@@ -36,7 +34,6 @@ export const MOBILE_MORE_TABS: RightTab[] = [
   "tower",
   "bosses",
   "guild",
-  "ranking",
 ];
 
 export function tabById(id: RightTab) {

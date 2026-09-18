@@ -1695,6 +1695,7 @@ body {
 
 .float-dmg {
   animation: float-dmg 1.05s ease-out forwards;
+  will-change: transform, opacity;
 }
 
 @keyframes float-dmg-hp {
