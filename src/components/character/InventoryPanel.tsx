@@ -1,8 +1,13 @@
 "use client";
 
 import { Backpack, CheckSquare, Coins, Recycle, Rows3, Square } from "lucide-react";
-import { INVENTORY_SIZE } from "@/lib/game/constants";
-import { formatNumber } from "@/lib/game/formulas";
+import {
+  INVENTORY_COLS,
+  INVENTORY_EXTRA_ROWS_MAX,
+  INVENTORY_ROW_COSTS,
+  inventoryCapacity,
+} from "@/lib/game/constants";
+import { formatFullDigits, formatNumber } from "@/lib/game/formulas";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { CraftPanel } from "./CraftPanel";
@@ -16,6 +21,9 @@ import {
 
 export function InventoryPanel() {
   const inventory = useGameStore((s) => s.inventory);
+  const gold = useGameStore((s) => s.resources.gold);
+  const bagExtraRows = useGameStore((s) => s.meta.bagExtraRows ?? 0);
+  const buyBagRow = useGameStore((s) => s.buyBagRow);
   const sellItems = useGameStore((s) => s.sellItems);
   const salvageItems = useGameStore((s) => s.salvageItems);
   const compactInventory = useGameStore((s) => s.compactInventory);
@@ -28,6 +36,9 @@ export function InventoryPanel() {
 
   const selectedCount = bulkSelectedIds.length;
   const filled = inventoryFillCount(inventory);
+  const cap = inventoryCapacity(bagExtraRows);
+  const nextRowCost =
+    bagExtraRows < INVENTORY_EXTRA_ROWS_MAX ? INVENTORY_ROW_COSTS[bagExtraRows] : null;
 
   function sellSelected() {
     const res = sellItems(bulkSelectedIds);
@@ -57,7 +68,7 @@ export function InventoryPanel() {
         <AutoSellMenu />
         <span className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] tabular-nums text-[#8aa0b4]">
           <Backpack className="h-3 w-3" />
-          {filled}/{INVENTORY_SIZE}
+          {filled}/{cap}
         </span>
       </div>
 
@@ -65,12 +76,28 @@ export function InventoryPanel() {
         <p className="mb-1 shrink-0 text-[11px] leading-tight text-amber">{inventoryMessage}</p>
       ) : null}
 
-      {/* Detail pane shares the same row height as the slots grid only */}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(220px,32%)] grid-rows-[minmax(0,1fr)] items-stretch gap-3 max-lg:grid-cols-1 max-lg:grid-rows-[minmax(0,1fr)_minmax(14rem,42%)]">
-        <div className="flex min-h-0 min-w-0 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-col gap-2">
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-visible p-1">
             <InventoryGrid />
           </div>
+          {nextRowCost != null ? (
+            <button
+              type="button"
+              onClick={() => {
+                const res = buyBagRow();
+                setInventoryMessage(res.message);
+              }}
+              disabled={gold < nextRowCost}
+              className="es-btn es-inv-control mx-1 h-8 shrink-0 text-[11px]"
+              title={`Купить ряд ${bagExtraRows + 1} (+${INVENTORY_COLS} ячеек)`}
+            >
+              <Rows3 className="h-3.5 w-3.5" />
+              Ряд +{INVENTORY_COLS} · {formatFullDigits(nextRowCost)} зол.
+            </button>
+          ) : (
+            <p className="px-1 text-[10px] text-white/30">Все доп. ряды куплены</p>
+          )}
         </div>
         <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <CraftPanel />
@@ -80,43 +107,35 @@ export function InventoryPanel() {
       <div className="es-plate mt-2 flex shrink-0 items-center gap-1.5 px-2 py-1.5 max-lg:order-last">
         <button
           type="button"
-          onClick={() => setSelectionMode(!selectionMode)}
-          className={selectionMode ? "es-btn es-btn-cyan es-inv-control px-2.5" : "es-btn es-inv-control px-2.5"}
-          title={selectionMode ? "Выключить выбор" : "Массовый выбор"}
+          onClick={() => {
+            setSelectionMode(!selectionMode);
+            clearBulkSelection();
+          }}
+          className="es-btn es-inv-control h-8 px-2 text-[11px]"
         >
-          {selectionMode ? <CheckSquare className="h-3 w-3" /> : <Square className="h-3 w-3" />}
+          {selectionMode ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
           Выбор
         </button>
-        {selectionMode ? (
-          <>
-            <span className="shrink-0 tabular-nums text-[11px] text-[#8aa0b4]">{selectedCount}</span>
-            <button
-              type="button"
-              disabled={selectedCount === 0}
-              onClick={sellSelected}
-              className="es-btn es-btn-amber es-inv-control px-2.5"
-            >
-              <Coins className="h-3 w-3" /> Продать
-            </button>
-            <button
-              type="button"
-              disabled={selectedCount === 0}
-              onClick={salvageSelected}
-              className="es-btn es-btn-cyan es-inv-control px-2.5"
-            >
-              <Recycle className="h-3 w-3" /> Разобрать
-            </button>
-          </>
-        ) : null}
         <button
           type="button"
           onClick={() => compactInventory()}
-          className="es-btn es-inv-control ml-auto h-7 w-7 px-0"
-          title="Уплотнить"
-          aria-label="Уплотнить"
+          className="es-btn es-inv-control h-8 px-2 text-[11px]"
         >
           <Rows3 className="h-3.5 w-3.5" />
+          Уплотнить
         </button>
+        {selectionMode && selectedCount > 0 ? (
+          <>
+            <button type="button" onClick={sellSelected} className="es-btn es-btn-amber h-8 px-2 text-[11px]">
+              <Coins className="h-3.5 w-3.5" />
+              Продать ({selectedCount})
+            </button>
+            <button type="button" onClick={salvageSelected} className="es-btn h-8 px-2 text-[11px]">
+              <Recycle className="h-3.5 w-3.5" />
+              Разобрать
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );

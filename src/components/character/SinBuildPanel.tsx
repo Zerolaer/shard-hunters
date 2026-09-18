@@ -219,9 +219,6 @@ export function SinBuildPanel() {
           <div className="truncate font-display text-sm text-white">
             {pathDef ? pathDef.name : "Выберите путь"}
           </div>
-          <p className="truncate text-[10px] text-[#8aa0b4]">
-            {pathDef ? `${pathDef.epithet} · ${viewDef.id !== path ? `смотрите ${viewDef.name}` : pathDef.resource}` : "Путь переписывает все искусства"}
-          </p>
         </div>
         <div className="sin-points shrink-0">
           <span className="font-mono text-base leading-none text-white">{points}</span>

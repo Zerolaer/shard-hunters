@@ -9,7 +9,7 @@ export const RARITIES = [
 
 export type Rarity = (typeof RARITIES)[number];
 
-export const EQUIP_SLOTS = [
+export const GEAR_SLOTS = [
   "helmet",
   "armor",
   "gloves",
@@ -20,7 +20,18 @@ export const EQUIP_SLOTS = [
   "amulet",
 ] as const;
 
+/** Extra fragile relics — enhance can destroy them past +3. */
+export const ARTIFACT_SLOTS = ["artifact1", "artifact2", "artifact3"] as const;
+
+export const EQUIP_SLOTS = [...GEAR_SLOTS, ...ARTIFACT_SLOTS] as const;
+
+export type GearSlot = (typeof GEAR_SLOTS)[number];
+export type ArtifactSlot = (typeof ARTIFACT_SLOTS)[number];
 export type EquipSlot = (typeof EQUIP_SLOTS)[number];
+
+export function isArtifactSlot(slot: EquipSlot): slot is ArtifactSlot {
+  return (ARTIFACT_SLOTS as readonly string[]).includes(slot);
+}
 
 export const HUNTER_CLASS_IDS = ["warrior", "archer", "assassin", "mage"] as const;
 export type HunterClass = (typeof HUNTER_CLASS_IDS)[number];
@@ -165,6 +176,8 @@ export interface Gem {
   id: string;
   rank: GemRank;
   affixes: Affix[];
+  /** Mythic×10 fusion product — iridescent socket stone. */
+  blessed?: boolean;
 }
 
 export interface Item {
@@ -301,6 +314,8 @@ export interface CombatEffect {
   kind: CombatEffectKind;
   /** UI icon key, e.g. poison, ward, stealth. */
   icon: string;
+  /** Optional hover body for buff/debuff tooltips. */
+  description?: string;
   remainingSec?: number;
   remainingHits?: number;
   remainingStacks?: number;
@@ -328,6 +343,13 @@ export interface CombatState {
   lootlessKills: number;
   playerEffects: CombatEffect[];
   monsterEffects: CombatEffect[];
+  /**
+   * Short breather after a kill before the next pack. Keeps skill CDs ticking
+   * without the same-frame respawn snap that made autobattle feel jittery.
+   */
+  pullDelay?: number;
+  /** When pullDelay hits 0, spawn a floor boss if true. */
+  pendingSpawnBoss?: boolean;
 }
 
 export interface LocationProgress {
@@ -483,6 +505,11 @@ export interface OfflineReport {
   died?: boolean;
 }
 
+export interface PotionBuffState {
+  potionId: string;
+  expiresAt: number;
+}
+
 export interface GameMeta {
   lastTick: number;
   pendingOffline: OfflineReport | null;
@@ -490,6 +517,10 @@ export interface GameMeta {
   hunterAcc?: number;
   /** Living-roster generation; mismatch rebuilds starters. */
   hunterRoster?: number;
+  /** Extra purchased inventory rows (0–3). Base is 6 rows. */
+  bagExtraRows?: number;
+  /** Active potion auras (30 min wall-clock). */
+  potionBuffs?: PotionBuffState[];
 }
 
 export type RightTab =

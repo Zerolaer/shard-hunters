@@ -2,9 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Coins, Gem, LogOut, Pickaxe, Sparkles, Zap } from "lucide-react";
+import { Coins, Gem, LogOut, Pickaxe, Zap } from "lucide-react";
 import { formatFullDigits, xpToNext } from "@/lib/game/formulas";
-import { BLESSING_MATERIAL_LABEL } from "@/lib/game/workshop";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useDerivedStats, useGameStore } from "@/store/useGameStore";
 import { HealthBar } from "@/components/combat/HealthBar";
@@ -20,7 +19,7 @@ export function GameHeader() {
   const [profileOpen, setProfileOpen] = useState(false);
 
   return (
-    <header className="es-header relative z-40 shrink-0 overflow-visible">
+    <header className="es-header relative z-40 shrink-0 overflow-visible select-none">
       <div className="relative mx-auto hidden h-14 max-w-[1600px] items-center overflow-visible px-5 lg:flex">
         <ProfileButton
           name={character.name}
@@ -148,14 +147,6 @@ function CurrencyRow({
         tip="Руда — добывается в шахтах, тратится на усиление"
         compact={compact}
       />
-      <span className="es-currency-divider" aria-hidden />
-      <CurrencyStat
-        icon={<Sparkles className="h-3.5 w-3.5 text-[#f43f5e]/70" />}
-        value={formatFullDigits(resources.blessing ?? 0)}
-        minCh={compact ? 0 : 4}
-        tip={`${BLESSING_MATERIAL_LABEL} — материал мастерской (благословение и сокеты)`}
-        compact={compact}
-      />
     </div>
   );
 }
@@ -192,7 +183,11 @@ function CurrencyStat({
 
   return (
     <div
-      className={compact ? "group/cur relative flex items-center gap-1 px-2.5" : "group/cur relative flex items-center gap-1.5 px-3.5"}
+      className={
+        compact
+          ? "group/cur relative flex cursor-default items-center gap-1 px-2.5 select-text"
+          : "group/cur relative flex cursor-default items-center gap-1.5 px-3.5 select-text"
+      }
       onMouseEnter={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
       onMouseLeave={() => setAnchor(null)}
       onFocus={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}

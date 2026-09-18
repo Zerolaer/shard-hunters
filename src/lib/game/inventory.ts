@@ -1,5 +1,6 @@
 import { itemPower } from "./formulas";
-import { isMaterialItem, isEchoShard, mergeEchoOnto } from "./echoCraft";
+import { isMaterialItem } from "./echoCraft";
+import { mergeMaterialOnto } from "./materials";
 import { EQUIP_SLOTS, type EquipSlot, type Item, type Rarity } from "./types";
 
 export const INVENTORY_SORT_MODES = ["rarity", "slot", "itemLevel", "power", "name"] as const;
@@ -42,7 +43,7 @@ export function moveInventoryItem(
   const from = inventory[fromIndex];
   if (!from) return;
   const to = inventory[toIndex];
-  if (to && isEchoShard(from) && isEchoShard(to) && mergeEchoOnto(to, from)) {
+  if (to && isMaterialItem(from) && isMaterialItem(to) && mergeMaterialOnto(to, from)) {
     inventory[fromIndex] = null;
     return;
   }

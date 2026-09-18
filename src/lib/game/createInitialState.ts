@@ -1,15 +1,12 @@
-import { mineOccupantBm } from "./balance";
 import {
   defaultAutoSell,
   emptyEquipment,
   INVENTORY_SIZE,
   LOCATIONS,
   MINES,
-  NPC_GUILDS,
-  NPC_HUNTERS,
   SKILLS,
 } from "./constants";
-import { statsOf, irand, pick, uid } from "./formulas";
+import { statsOf, uid } from "./formulas";
 import { generateItem, generateMonster, emptyLocationProgress } from "./generators";
 import { createFarmState, DEFAULT_SPOT_ID, FARM_SPOT_BY_ID, occupySpot } from "./spots";
 import { emptyGuildState } from "./guild";
@@ -18,7 +15,7 @@ import { DEFAULT_AVATAR_ID } from "./avatars";
 import "./dungeons";
 import { emptyBossesState } from "./bosses";
 import { emptyTowerState } from "./tower";
-import { createWorldHunters, HUNTER_ROSTER_GEN } from "./hunters";
+import { HUNTER_ROSTER_GEN } from "./hunters";
 import type { GameData, SkillId } from "./types";
 
 export function createInitialState(opts?: { name?: string }): GameData {
@@ -38,26 +35,11 @@ export function createInitialState(opts?: { name?: string }): GameData {
 
   const mines: GameData["mines"] = {};
   for (const mine of MINES) {
-    const occupants = [];
-    const filled = Math.max(1, mine.slots - 1);
-    for (let i = 0; i < filled; i++) {
-      occupants.push({
-        id: uid(),
-        name: pick(NPC_HUNTERS),
-        guild: pick(NPC_GUILDS),
-        power: mineOccupantBm(mine.bmLevel ?? mine.minLevel, i, mine.slots) + irand(-12, 18),
-        isPlayer: false,
-      });
-    }
-    mines[mine.id] = { occupants };
+    mines[mine.id] = { occupants: [] };
   }
 
-  const worldHunters = createWorldHunters();
-  const leaderboard = worldHunters
-    .slice()
-    .sort((a, b) => b.power - a.power)
-    .slice(0, 12)
-    .map((h) => ({ id: h.id, name: h.name, guild: h.guild, power: h.power }));
+  const worldHunters: GameData["worldHunters"] = [];
+  const leaderboard: GameData["leaderboard"] = [];
 
   const farm = createFarmState();
   const startSpot = FARM_SPOT_BY_ID[DEFAULT_SPOT_ID];

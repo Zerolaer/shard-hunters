@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Crown, DoorOpen, Eye, EyeOff, List, Swords, Timer, Zap } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { expectedBm } from "@/lib/game/balance";
+import { estimateMonsterBm } from "@/lib/game/balance";
 import {
   KILLS_FOR_BOSS,
   LOCATION_BY_ID,
@@ -87,50 +87,41 @@ export function CombatPanel() {
     : inBossArena && bossDef
       ? bossRecommendedBm(bossDef)
       : (spot?.requiredBm ?? locBm);
-  const enemyBm = monster
-    ? monster.isPvp
-      ? expectedBm(monster.level)
-      : inTower || inBossArena
-        ? spotBm
-        : Math.round(spotBm * (monster.isBoss ? 1.55 : 1))
-    : 0;
+  // Derive from live combat stats so floor/arena bosses with combat-index buffs
+  // don't show a tiny spot-gate BM while taking forever to kill.
+  const enemyBm = monster ? estimateMonsterBm(monster) : 0;
   const dungeonRemain = dungeonRemainingMs(dungeon?.active, now);
 
   return (
     <section className="es-frame flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden p-4 max-lg:rounded-none max-lg:border-x-0 max-lg:border-b-0 max-lg:p-3">
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_5.5rem] items-start gap-x-1.5 gap-y-1.5 border-b border-white/[0.08] pb-3 max-lg:grid-cols-[minmax(0,1fr)_5.5rem] max-lg:pb-2">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_5.5rem] items-center gap-x-2 gap-y-1.5 border-b border-white/[0.08] pb-3 max-lg:grid-cols-[minmax(0,1fr)_5.5rem] max-lg:pb-2">
         <div className="min-w-0 max-lg:col-start-1 max-lg:row-start-1">
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="min-w-0 flex-1 truncate font-display text-[15px] font-medium tracking-tight text-white">
-            {loc?.name ?? "Локация"}
+              {loc?.name ?? "Локация"}
+            </h2>
             {inTower ? (
-              <span className="ml-2 font-sans text-xs font-normal text-[#fb7185]">
-                Башня · этаж {floor}
+              <span className="shrink-0 rounded-md border border-[#fb7185]/25 bg-[#fb7185]/10 px-1.5 py-0.5 text-[10px] text-[#fda4af]">
+                Башня · {floor}
               </span>
             ) : inBossArena ? (
-              <span className="ml-2 font-sans text-xs font-normal text-[#f59e0b]">
-                {bossDef
-                  ? bossDef.kind === "world"
-                    ? "Мировой босс"
-                    : bossDef.kind === "field"
-                      ? "Полевой босс"
-                      : `Сюжет · гл. ${bossDef.chapter ?? 1}`
-                  : "Арена боссов"}
+              <span className="shrink-0 rounded-md border border-[#f59e0b]/25 bg-[#f59e0b]/10 px-1.5 py-0.5 text-[10px] text-[#fbbf24]">
+                {bossDef?.kind === "world"
+                  ? "Мировой"
+                  : bossDef?.kind === "field"
+                    ? "Полевой"
+                    : `Глава ${bossDef?.chapter ?? 1}`}
               </span>
             ) : inDungeon ? (
-              <span className="ml-2 font-sans text-xs font-normal text-[var(--accent)]">
-                Подземелье
-                {dungeon?.active ? ` · ${DUNGEON_TYPE_LABEL[dungeon.active.type]}` : ""}
+              <span className="shrink-0 rounded-md border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] text-[var(--accent)]">
+                {dungeon?.active ? DUNGEON_TYPE_LABEL[dungeon.active.type] : "Подземелье"}
               </span>
             ) : (
-              <span className="ml-2 font-sans text-xs font-normal text-[var(--muted)]">
-                Этаж {floor}
-              </span>
+              <span className="shrink-0 text-[11px] tabular-nums text-white/40">Этаж {floor}</span>
             )}
             {mode === "pvp" ? (
-              <span className="ml-2 font-sans text-xs font-normal text-white/70">PvP</span>
+              <span className="shrink-0 text-[11px] text-white/60">PvP</span>
             ) : null}
-          </h2>
             <div className="lg:hidden">
               <button
                 type="button"
@@ -145,15 +136,12 @@ export function CombatPanel() {
             </div>
           </div>
           {mode !== "pvp" ? (
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-white/40">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[10px] text-white/40">
               {spot ? <span className="truncate">{spot.name}</span> : null}
               <span className="inline-flex items-center gap-0.5 tabular-nums text-white/55">
                 <Zap className="h-2.5 w-2.5" />
-                спот {formatFullDigits(spotBm)} БМ
+                {formatFullDigits(spotBm)} БМ
               </span>
-              {loc ? (
-                <span className="tabular-nums">зона ~{formatFullDigits(locBm)} БМ</span>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -285,7 +273,7 @@ export function CombatPanel() {
                       {monster.isPvp ? " · охотник" : monster.isBoss ? " · босс" : ""}
                       <span className="ml-1.5 inline-flex items-center gap-0.5 tabular-nums text-white/45">
                         <Zap className="h-2.5 w-2.5" />
-                        ~{formatFullDigits(enemyBm)} БМ
+                        {formatFullDigits(enemyBm)} БМ
                       </span>
                     </span>
                   </div>
@@ -303,7 +291,15 @@ export function CombatPanel() {
               </div>
             </>
           ) : (
-            <div className="py-2 text-sm text-[#6a7c8c]">Нет цели</div>
+            <div
+              className={cn(
+                "flex min-h-[7.5rem] flex-1 flex-col items-center justify-center gap-1 text-center",
+                dense && "min-h-[5.5rem]",
+              )}
+            >
+              <span className="font-display text-sm text-white/35">Нет цели</span>
+              <span className="text-[11px] text-[#6a7c8c]">Ожидание следующего пака…</span>
+            </div>
           )}
         </div>
 

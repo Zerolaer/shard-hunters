@@ -215,122 +215,97 @@ export const FIELD_BOSSES: BossDef[] = [
   },
 ];
 
-/** Story bosses — fewer than Tower floors, fatter payday. */
-export const PERSONAL_BOSSES: BossDef[] = [
-  {
-    id: "story-01",
-    kind: "personal",
-    name: "Тень Новичка",
-    blurb: "Первое испытание. Учись держать фазу, а не ваншотить.",
-    chapter: 1,
-    minLevel: 6,
-    baseLevel: 7,
-    accent: "#fda4af",
-    threat: 1.12,
-  },
-  {
-    id: "story-02",
-    kind: "personal",
-    name: "Страж Просёлка",
-    blurb: "Второй сюжетный босс. Уже требует бафф на урон.",
-    chapter: 2,
-    minLevel: 10,
-    baseLevel: 11,
-    accent: "#fb7185",
-    threat: 1.14,
-  },
-  {
-    id: "story-03",
-    kind: "personal",
-    name: "Хозяин Камня",
-    blurb: "Каменный щит — долгий бой без просадки защиты.",
-    chapter: 3,
-    minLevel: 16,
-    baseLevel: 17,
-    accent: "#f43f5e",
-    threat: 1.16,
-  },
-  {
-    id: "story-04",
-    kind: "personal",
-    name: "Ведьма Тумана",
-    blurb: "Сюжетный мид. Лут жирнее башенного этажа.",
-    chapter: 4,
-    minLevel: 22,
-    baseLevel: 24,
-    accent: "#e11d48",
-    threat: 1.18,
-  },
-  {
-    id: "story-05",
-    kind: "personal",
-    name: "Капитан Разлома",
-    blurb: "Половина кампании. Без буста — долгая смерть.",
-    chapter: 5,
-    minLevel: 30,
-    baseLevel: 32,
-    accent: "#be123c",
-    threat: 1.2,
-  },
-  {
-    id: "story-06",
-    kind: "personal",
-    name: "Зверь Ущелья",
-    blurb: "Тяжёлый удар. Рекомендуется защитный слот.",
-    chapter: 6,
-    minLevel: 38,
-    baseLevel: 40,
-    accent: "#9f1239",
-    threat: 1.22,
-  },
-  {
-    id: "story-07",
-    kind: "personal",
-    name: "Жрица Осколков",
-    blurb: "Фаза на выносливость. Награда — камень + предмет.",
-    chapter: 7,
-    minLevel: 48,
-    baseLevel: 50,
-    accent: "#881337",
-    threat: 1.24,
-  },
-  {
-    id: "story-08",
-    kind: "personal",
-    name: "Герцог Пепла",
-    blurb: "Поздний сюжет. БМ и баффы обязательны.",
-    chapter: 8,
-    minLevel: 58,
-    baseLevel: 60,
-    accent: "#7f1d1d",
-    threat: 1.26,
-    bmScale: 1.1,
-  },
-  {
-    id: "story-09",
-    kind: "personal",
-    name: "Страж Небес",
-    blurb: "Предфинал. Долгая фаза, жирный лут.",
-    chapter: 9,
-    minLevel: 68,
-    baseLevel: 72,
-    accent: "#b91c1c",
-    threat: 1.28,
-    bmScale: 1.2,
-  },
-  {
-    id: "story-10",
-    kind: "personal",
-    name: "Король Бездны",
-    blurb: "Финал сюжетной линии. Редко и жирно.",
-    chapter: 10,
-    minLevel: 80,
-    baseLevel: 85,
-    accent: "#dc2626",
-    threat: 1.32,
-    bmScale: 1.35,
-  },
+/** Story tower — 100 bosses, BM climbs ~1k → ~1M. */
+export const PERSONAL_BOSS_COUNT = 100;
+
+const STORY_SEED: Array<{
+  name: string;
+  blurb: string;
+  minLevel: number;
+  baseLevel: number;
+  threat: number;
+  bmScale?: number;
+}> = [
+  { name: "Тень Новичка", blurb: "Первое испытание. Учись держать фазу, а не ваншотить.", minLevel: 6, baseLevel: 7, threat: 1.12 },
+  { name: "Страж Просёлка", blurb: "Второй сюжетный босс. Уже требует бафф на урон.", minLevel: 10, baseLevel: 11, threat: 1.14 },
+  { name: "Хозяин Камня", blurb: "Каменный щит — долгий бой без просадки защиты.", minLevel: 16, baseLevel: 17, threat: 1.16 },
+  { name: "Ведьма Тумана", blurb: "Сюжетный мид. Лут жирнее обычного этажа.", minLevel: 22, baseLevel: 24, threat: 1.18 },
+  { name: "Капитан Разлома", blurb: "Половина ранней кампании. Без буста — долгая смерть.", minLevel: 30, baseLevel: 32, threat: 1.2 },
+  { name: "Зверь Ущелья", blurb: "Тяжёлый удар. Рекомендуется защитный слот.", minLevel: 38, baseLevel: 40, threat: 1.22 },
+  { name: "Жрица Осколков", blurb: "Фаза на выносливость. Награда — камень + предмет.", minLevel: 48, baseLevel: 50, threat: 1.24 },
+  { name: "Герцог Пепла", blurb: "Поздний сюжет. БМ и баффы обязательны.", minLevel: 58, baseLevel: 60, threat: 1.26, bmScale: 1.1 },
+  { name: "Страж Небес", blurb: "Предфинал ранней арки. Долгая фаза, жирный лут.", minLevel: 68, baseLevel: 72, threat: 1.28, bmScale: 1.2 },
+  { name: "Король Бездны", blurb: "Финал первой арки. Дальше — башня из сотни глав.", minLevel: 80, baseLevel: 85, threat: 1.32, bmScale: 1.35 },
 ];
+
+const STORY_NAME_POOL = [
+  "Вестник", "Клинок", "Страж", "Жнец", "Владыка", "Тень", "Герцог", "Жрец", "Зверь", "Титан",
+  "Ведьма", "Каратель", "Хранитель", "Палач", "Странник", "Архидемон", "Сувереи", "Разлом",
+];
+const STORY_TITLE_POOL = [
+  "Пепла", "Эха", "Пустоты", "Клинка", "Бури", "Крови", "Осколков", "Ночи", "Трона", "Бездны",
+  "Рассвета", "Могил", "Зеркал", "Шторма", "Костей", "Пламени", "Лун", "Шипов",
+];
+
+function storyAccent(chapter: number) {
+  const t = (chapter - 1) / Math.max(1, PERSONAL_BOSS_COUNT - 1);
+  const r = Math.round(253 - t * 40);
+  const g = Math.round(164 - t * 120);
+  const b = Math.round(175 - t * 80);
+  return `#${[r, g, b].map((n) => Math.max(40, Math.min(255, n)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function storyName(chapter: number) {
+  if (chapter <= STORY_SEED.length) return STORY_SEED[chapter - 1]!.name;
+  const a = STORY_NAME_POOL[(chapter * 3) % STORY_NAME_POOL.length]!;
+  const b = STORY_TITLE_POOL[(chapter * 7) % STORY_TITLE_POOL.length]!;
+  return `${a} ${b}`;
+}
+
+function storyBlurb(chapter: number) {
+  if (chapter <= STORY_SEED.length) return STORY_SEED[chapter - 1]!.blurb;
+  if (chapter <= 30) return `Глава ${chapter}. Ступень сюжетной башни — держи фазу.`;
+  if (chapter <= 60) return `Глава ${chapter}. Средняя башня: БМ и баффы обязательны.`;
+  if (chapter <= 90) return `Глава ${chapter}. Высокая башня — долгий бой, жирный лут.`;
+  return `Глава ${chapter}. Вершина сюжета. Только для сильнейших.`;
+}
+
+/**
+ * Build 100 personal bosses. BM target ≈ 1k → 1M on a log curve via baseLevel + bmScale.
+ */
+function buildPersonalBosses(): BossDef[] {
+  const out: BossDef[] = [];
+  for (let chapter = 1; chapter <= PERSONAL_BOSS_COUNT; chapter++) {
+    const t = (chapter - 1) / Math.max(1, PERSONAL_BOSS_COUNT - 1);
+    const seed = STORY_SEED[chapter - 1];
+    const minLevel = seed?.minLevel ?? Math.max(6, Math.round(6 + t * 94));
+    const baseLevel = seed?.baseLevel ?? Math.max(7, Math.round(7 + t * 168));
+    const threat = seed?.threat ?? 1.12 + t * 0.28;
+    // Log BM: ~1 000 at ch1 → ~1 000 000 at ch100.
+    const targetBm = Math.round(1000 * Math.pow(1000, t));
+    const level = monsterLevelOf(baseLevel, 1, true);
+    const soft = spotRequiredBm(level, "hot", "boss");
+    const climb = Math.pow(1 + (chapter - 1) * 0.035, 1.15);
+    const rawScale = targetBm / Math.max(1, soft * threat * climb);
+    const bmScale = seed?.bmScale ?? Math.max(1, Math.round(rawScale * 100) / 100);
+    out.push({
+      id: `story-${String(chapter).padStart(2, "0")}`,
+      kind: "personal",
+      name: storyName(chapter),
+      blurb: storyBlurb(chapter),
+      chapter,
+      minLevel,
+      baseLevel,
+      accent: storyAccent(chapter),
+      threat,
+      bmScale: bmScale > 1.01 ? bmScale : undefined,
+    });
+  }
+  return out;
+}
+
+export const PERSONAL_BOSSES: BossDef[] = buildPersonalBosses();
+
 
 export const ALL_BOSS_DEFS: BossDef[] = [...WORLD_BOSSES, ...FIELD_BOSSES, ...PERSONAL_BOSSES];
 

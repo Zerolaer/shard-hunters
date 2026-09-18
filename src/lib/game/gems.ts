@@ -26,8 +26,11 @@ export const GEM_NAME: Record<GemRank, string> = {
   mythic: "Мифическая искра",
 };
 
-/** Three of a rank fuse into one of the next; mythic is the end of the chain. */
+/** Three of a rank fuse into one of the next; mythic→blessed needs ten. */
 export const GEMS_PER_FUSION = 3;
+/** Mythic gems fuse into one blessed mythic with boosted rolls. */
+export const MYTHIC_TO_BLESSED = 10;
+export const BLESSED_GEM_STAT_MULT = 1.28;
 
 export function nextGemRank(rank: GemRank): GemRank | null {
   const i = GEM_RANKS.indexOf(rank);
@@ -104,8 +107,22 @@ function rollGemAffixes(rank: GemRank): Affix[] {
   return result;
 }
 
-export function createGem(rank: GemRank): Gem {
-  return { id: uid(), rank, affixes: rollGemAffixes(rank) };
+export function createGem(rank: GemRank, blessed = false): Gem {
+  const affixes = rollGemAffixes(rank).map((a) =>
+    blessed
+      ? {
+          ...a,
+          value: isPercentStat(a.stat)
+            ? Math.round(a.value * BLESSED_GEM_STAT_MULT * 10) / 10
+            : Math.max(1, Math.round(a.value * BLESSED_GEM_STAT_MULT)),
+        }
+      : a,
+  );
+  return { id: uid(), rank, affixes, blessed: blessed || undefined };
+}
+
+export function createBlessedMythicGem(): Gem {
+  return createGem("mythic", true);
 }
 
 /**
@@ -117,6 +134,10 @@ export function fuseGems(rank: GemRank): Gem | null {
   const next = nextGemRank(rank);
   if (!next) return null;
   return createGem(next);
+}
+
+export function fusionNeed(rank: GemRank): number {
+  return rank === "mythic" ? MYTHIC_TO_BLESSED : GEMS_PER_FUSION;
 }
 
 /** Rough comparison value, used for sorting and for picking fusion fodder. */

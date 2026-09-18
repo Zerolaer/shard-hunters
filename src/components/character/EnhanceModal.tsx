@@ -4,7 +4,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Hammer, ShieldCheck, Sparkles, X, Zap } from "lucide-react";
 import { MAX_ENHANCE, RARITY_COLOR } from "@/lib/game/constants";
+import type { Item } from "@/lib/game/types";
+import { isArtifactSlot } from "@/lib/game/types";
+import { isMaterialItem } from "@/lib/game/echoCraft";
 import {
+  artifactBreakChance,
   enhanceCost,
   enhancePlanCost,
   enhanceSafeFloor,
@@ -12,8 +16,6 @@ import {
   isEnhanceSafe,
 } from "@/lib/game/enhance";
 import { formatNumber } from "@/lib/game/formulas";
-import type { Item } from "@/lib/game/types";
-import { isMaterialItem } from "@/lib/game/echoCraft";
 import { cn } from "@/lib/cn";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
@@ -166,6 +168,10 @@ export function EnhanceModal() {
     : workItems[0] ?? selectedItems[0] ?? null;
   const focusChance = focusItem ? enhanceSuccessChance(focusItem.enhanceLevel) : 0;
   const focusSafe = focusItem ? isEnhanceSafe(focusItem.enhanceLevel) : true;
+  const focusBreak =
+    focusItem && isArtifactSlot(focusItem.slot)
+      ? artifactBreakChance(focusItem.enhanceLevel)
+      : 0;
   const showFocusMeta = !!(focusItem && focusItem.enhanceLevel < targetLevel);
 
   useEffect(() => {
@@ -598,15 +604,22 @@ export function EnhanceModal() {
                     <span className="font-mono text-white/75">
                       {(focusChance * 100).toFixed(0)}%
                     </span>
+                    {focusBreak > 0 ? (
+                      <span className="font-mono text-[#fb7185]">
+                        лом {(focusBreak * 100).toFixed(0)}%
+                      </span>
+                    ) : null}
                     <span
                       className={cn(
                         "inline-flex items-center gap-1",
-                        focusSafe ? "text-[#4ade80]" : "text-[#f87171]",
+                        focusSafe && focusBreak <= 0 ? "text-[#4ade80]" : "text-[#f87171]",
                       )}
                     >
                       <ShieldCheck className="h-3 w-3" />
-                      {focusSafe
-                        ? "безопасный уровень"
+                      {focusBreak > 0
+                        ? "артефакт может разрушиться"
+                        : focusSafe
+                          ? "безопасный уровень"
                         : `откат до +${focusItem ? enhanceSafeFloor(focusItem.enhanceLevel) : 0}`}
                     </span>
                   </p>

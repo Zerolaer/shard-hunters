@@ -21,10 +21,18 @@ export {
   regionForLocation,
 } from "./locations";
 
-/** Visual bag: 8 columns × 6 rows (48 cells). Positions are sparse `Item | null`. */
+/** Visual bag: 8 columns × 6 base rows (48 cells). Up to +3 rows can be bought. */
 export const INVENTORY_COLS = 8;
 export const INVENTORY_ROWS = 6;
+export const INVENTORY_EXTRA_ROWS_MAX = 3;
+export const INVENTORY_ROW_COSTS = [100_000, 200_000, 300_000] as const;
 export const INVENTORY_SIZE = INVENTORY_COLS * INVENTORY_ROWS;
+export const INVENTORY_SIZE_MAX = INVENTORY_COLS * (INVENTORY_ROWS + INVENTORY_EXTRA_ROWS_MAX);
+
+export function inventoryCapacity(extraRows = 0) {
+  const rows = INVENTORY_ROWS + Math.max(0, Math.min(INVENTORY_EXTRA_ROWS_MAX, Math.floor(extraRows)));
+  return INVENTORY_COLS * rows;
+}
 
 export function normalizeInventory<T>(
   inv: Array<T | null> | undefined,
@@ -80,6 +88,9 @@ export const SLOT_LABEL: Record<EquipSlot, string> = {
   offhand: "Вторичка",
   ring: "Кольцо",
   amulet: "Амулет",
+  artifact1: "Артефакт I",
+  artifact2: "Артефакт II",
+  artifact3: "Артефакт III",
 };
 
 export const STAT_LABEL: Record<AffixStat, string> = {
@@ -358,6 +369,9 @@ export const SLOT_BASE_NAME: Record<EquipSlot, string[]> = {
   offhand: ["Щит", "Сфера", "Кинжал тени", "Фолиант"],
   ring: ["Кольцо", "Перстень", "Обруч"],
   amulet: ["Амулет", "Талисман", "Кулон"],
+  artifact1: ["Реликт", "Осколок власти", "Печать"],
+  artifact2: ["Реликт", "Осколок власти", "Печать"],
+  artifact3: ["Реликт", "Осколок власти", "Печать"],
 };
 
 export const NAME_PREFIX: Record<Rarity, string[]> = {
@@ -405,6 +419,9 @@ export function emptyEquipment(): Record<EquipSlot, Item | null> {
     offhand: null,
     ring: null,
     amulet: null,
+    artifact1: null,
+    artifact2: null,
+    artifact3: null,
   };
 }
 

@@ -29,6 +29,13 @@ const TYPE_ICON = {
   loot: Gem,
 } as const;
 
+const TYPE_ACCENT: Record<DungeonType, string> = {
+  xp: "#a78bfa",
+  gold: "#e4c36a",
+  ore: "#94a3b8",
+  loot: "#38bdf8",
+};
+
 function rateChips(hall: DungeonHall) {
   const chips: string[] = [];
   if (hall.rates.xpMult > 1.01) chips.push(`XP ×${hall.rates.xpMult}`);
@@ -96,103 +103,57 @@ export function DungeonsPanel() {
 
       {msg ? <p className="text-[11px] text-white/65">{msg}</p> : null}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(180px,0.72fr)_minmax(0,1.28fr)]">
-        {/* Left: dungeon kinds */}
-        <aside className="es-plate flex flex-col gap-1 p-2">
-          <div className="es-label px-1.5 pb-1.5 pt-0.5">Виды данжей</div>
-          <div className="flex gap-1 overflow-x-auto pb-0.5 lg:flex-col lg:overflow-visible">
-            {DUNGEON_TYPES.map((t) => {
-              const Icon = TYPE_ICON[t];
-              const available = dungeonTypeAvailable(dungeonState, t, now);
-              const pausedMs = dungeonPausedRemainingMs(dungeonState, t, now);
-              const selected = type === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setType(t)}
-                  className={cn(
-                    "min-w-[7.5rem] shrink-0 rounded-lg border px-2.5 py-2.5 text-left transition lg:min-w-0 lg:w-full",
-                    selected
-                      ? "border-white/25 bg-white/10"
-                      : "border-transparent hover:border-white/10 hover:bg-white/[0.04]",
-                    !available && "opacity-55",
-                  )}
-                  title={
-                    available
-                      ? pausedMs > 0
-                        ? `Осталось ${formatDungeonCountdown(pausedMs)}`
-                        : DUNGEON_TYPE_BLURB[t]
-                      : "Время на сегодня исчерпано"
-                  }
-                >
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0",
-                        selected ? "text-[var(--accent)]" : "text-white/45",
-                      )}
-                    />
-                    <span className="font-display text-[13px] text-white">
-                      {DUNGEON_TYPE_LABEL[t]}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/45 lg:line-clamp-none">
-                    {DUNGEON_TYPE_BLURB[t]}
-                  </p>
-                  {!available ? (
-                    <span className="mt-1.5 inline-block text-[9px] uppercase tracking-wide text-white/35">
-                      сегодня закрыто
-                    </span>
-                  ) : pausedMs > 0 ? (
-                    <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] tabular-nums text-white/55">
-                      <Timer className="h-3 w-3" />
-                      {formatDungeonCountdown(pausedMs)}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </aside>
+      <div className="flex gap-1 overflow-x-auto pb-0.5">
+        {DUNGEON_TYPES.map((t) => {
+          const Icon = TYPE_ICON[t];
+          const selected = type === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setType(t)}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px]",
+                selected
+                  ? "border-white/25 bg-white/10 text-white"
+                  : "border-white/8 text-white/50 hover:bg-white/[0.04]",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" style={{ color: TYPE_ACCENT[t] }} />
+              {DUNGEON_TYPE_LABEL[t]}
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Right: floor/level cards for selected kind */}
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex flex-wrap items-end justify-between gap-2 px-0.5">
-            <div>
-              <div className="es-label">Уровни · {DUNGEON_TYPE_LABEL[type]}</div>
-              <p className="mt-0.5 text-[11px] text-[#8aa0b4]">{DUNGEON_TYPE_BLURB[type]}</p>
-            </div>
-            {typePausedMs > 0 && typeAvailable ? (
-              <span className="text-[11px] tabular-nums text-white/55">
-                осталось {formatDungeonCountdown(typePausedMs)}
-              </span>
-            ) : !typeAvailable ? (
-              <span className="text-[11px] text-white/40">лимит на сегодня</span>
-            ) : null}
-          </div>
+      <p className="text-[11px] text-[#8aa0b4]">{DUNGEON_TYPE_BLURB[type]}</p>
+      {typePausedMs > 0 && typeAvailable ? (
+        <span className="text-[11px] tabular-nums text-white/55">
+          осталось {formatDungeonCountdown(typePausedMs)}
+        </span>
+      ) : !typeAvailable ? (
+        <span className="text-[11px] text-white/40">лимит на сегодня</span>
+      ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            {halls.map((hall) => (
-              <FloorCard
-                key={hall.id}
-                hall={hall}
-                level={level}
-                power={derived.powerScore}
-                available={typeAvailable}
-                busy={busy}
-                pausedMs={typePausedMs}
-                onEnter={() => setMsg(enterDungeon(hall.id).message)}
-              />
-            ))}
-          </div>
-        </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {halls.map((hall) => (
+          <DungeonCard
+            key={hall.id}
+            hall={hall}
+            level={level}
+            power={derived.powerScore}
+            available={typeAvailable}
+            busy={busy}
+            pausedMs={typePausedMs}
+            onEnter={() => setMsg(enterDungeon(hall.id).message)}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function FloorCard({
+function DungeonCard({
   hall,
   level,
   power,
@@ -217,69 +178,53 @@ function FloorCard({
   const chips = rateChips(hall);
 
   return (
-    <article
+    <div
       className={cn(
-        "es-well flex flex-col gap-2.5 p-3 transition",
+        "overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0c]",
         locked && "opacity-50",
       )}
-      style={{ boxShadow: `inset 3px 0 0 0 ${hall.accent}99` }}
     >
-      <div>
-        <div className="font-display text-[14px] leading-tight text-white">{hall.name}</div>
-        <p className="mt-1 text-[10px] text-white/45">{hall.blurb}</p>
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 text-[10px]">
-        <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 tabular-nums text-white/60">
-          ур. {hall.minLevel}+
-        </span>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
-            okBm
-              ? "border-white/20 bg-white/10 text-white/85"
-              : weak
-                ? "border-[#fb7185]/30 bg-[#fb7185]/10 text-[#fda4af]"
-                : "border-[#e4c36a]/25 bg-[#e4c36a]/10 text-[#f0d78c]",
-          )}
-        >
-          <Zap className="h-3 w-3" />
-          БМ {formatFullDigits(rec)}
-        </span>
-      </div>
-
-      <ul className="space-y-1 text-[11px] text-white/70">
-        {chips.length > 0 ? (
-          chips.map((c) => (
-            <li key={c} className="flex items-center gap-2">
-              <span
-                className="h-1 w-1 shrink-0 rounded-full"
-                style={{ background: hall.accent }}
-              />
-              {c}
-            </li>
-          ))
-        ) : (
-          <li className="text-[#8aa0b4]">Стандартный фарм зала</li>
-        )}
-        <li className="flex items-center gap-2 text-white/45">
-          <span className="h-1 w-1 shrink-0 rounded-full bg-white/25" />
-          босс · {hall.bossName}
-        </li>
-      </ul>
-
-      {weak ? (
-        <p className="text-[10px] text-[#fda4af]">БМ ниже комфортного — зал опасен.</p>
-      ) : null}
-
-      <button
-        type="button"
-        disabled={locked || !available || busy}
-        onClick={onEnter}
-        className="es-btn es-btn-cyan mt-auto h-9 w-full px-3"
+      <div
+        className="relative h-28 w-full"
+        style={{
+          background: `linear-gradient(145deg, ${hall.accent}55 0%, #121214 55%, #0a0a0c 100%)`,
+        }}
       >
-        {pausedMs > 0 && !busy && !locked ? "Продолжить" : "ВОЙТИ"}
-      </button>
-    </article>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(255,255,255,0.12),transparent_55%)]" />
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-2.5 pt-8">
+          <div className="font-display text-[16px] text-white">{hall.name}</div>
+        </div>
+      </div>
+      <div className="space-y-3 p-3">
+        <p className="text-[11px] text-[#8aa0b4]">{hall.blurb}</p>
+        <div className="text-[10px] uppercase tracking-[0.14em] text-white/35">Режим:</div>
+        <div className="rounded-xl border border-white/12 bg-white/[0.04] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12px] text-white">Зал</span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[10px] tabular-nums",
+                okBm ? "text-white/80" : weak ? "text-[#fda4af]" : "text-[#f0d78c]",
+              )}
+            >
+              <Zap className="h-3 w-3" />
+              {formatFullDigits(rec)} БМ
+            </span>
+          </div>
+          <div className="mt-1 text-[10px] text-[#8aa0b4]">
+            ур. {hall.minLevel}+ · {chips.slice(0, 2).join(" · ") || "стандарт"}
+          </div>
+          <div className="mt-1 text-[10px] text-white/35">босс · {hall.bossName} · артефакты в дропе</div>
+        </div>
+        <button
+          type="button"
+          disabled={locked || !available || busy}
+          onClick={onEnter}
+          className="h-11 w-full rounded-xl bg-gradient-to-b from-[#3b82f6] to-[#1d4ed8] text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(37,99,235,0.25)] transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {pausedMs > 0 && !busy && !locked ? "Продолжить" : "ВОЙТИ"}
+        </button>
+      </div>
+    </div>
   );
 }

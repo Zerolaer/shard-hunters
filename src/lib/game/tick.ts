@@ -1,4 +1,12 @@
-import { bmDefenseMult, bmOffenseMult, expectedBm, gcdLength, REGEN } from "./balance";
+import {
+  bmDefenseMult,
+  bmOffenseMult,
+  expectedBm,
+  gcdLength,
+  LOCATION_BOSS_COMBAT_INDEX,
+  PULL_DELAY_SEC,
+  REGEN,
+} from "./balance";
 import { syncCombatEffects } from "./combatEffects";
 import { healPlayer, pushFloater, pushLog, registerMiss, withSuppressedCombatFx } from "./combatFx";
 import {
@@ -10,8 +18,10 @@ import {
   MINES,
   OFFLINE_CAP_SECONDS,
   RARITY_LABEL,
+  inventoryCapacity,
   resolvedAutoSell,
   SKILL_BY_ID,
+  SLOT_LABEL,
   STAT_POINTS_PER_LEVEL,
   TALENT_POINTS_PER_LEVEL,
 } from "./constants";
@@ -40,6 +50,7 @@ import {
   finalDropChance,
   generateItem,
   generateMonster,
+  maybeRollArtifactSlot,
   rarityBonusFor,
   rollRarity,
   type LootKind,
@@ -48,14 +59,37 @@ import {
   consumeEchoShards,
   countEchoShards,
   createEchoShardStack,
+  ECHO_SHARD_PLURAL,
   echoChestRecipe,
   echoDropQty,
   echoQty,
   echoSpendFreesSlot,
-  ECHO_SHARD_PLURAL,
   isEchoShard,
   isMaterialItem,
 } from "./echoCraft";
+import {
+  createBlessingSparkStack,
+  createSocketHammerStack,
+  consumeMaterial,
+  countMaterial,
+  isBlessingSpark,
+  isSocketHammer,
+  materialQty,
+  mergeMaterialOnto,
+  migrateBlessingCurrencyToItems,
+  rollSocketHammerDrop,
+  BLESSING_SPARK_PLURAL,
+  SOCKET_HAMMER_PLURAL,
+} from "./materials";
+import {
+  createPotionStack,
+  isPotionMaterial,
+  POTION_DURATION_MS,
+  POTION_INGREDIENT_BY_ID,
+  POTION_RECIPE_BY_ID,
+  prunePotionBuffs,
+  rollPotionIngredientDrop,
+} from "./potions";
 import { migrateAssassinBuild } from "./classKit";
 import {
   DUNGEON_HALL_BY_ID,
@@ -118,6 +152,7 @@ import {
   RARITIES,
   type CombatLogEntry,
   type DungeonType,
+  type EquipSlot,
   type GameData,
   type Gem,
   type Item,
@@ -343,23 +378,39 @@ export function ensureWorld(state: Draft) {
   if (!state.mines) state.mines = {};
   for (const mine of MINES) {
     if (!state.mines[mine.id]) {
-      const occupants = [];
-      const filled = Math.max(1, mine.slots - 1);
-      for (let i = 0; i < filled; i++) {
-        occupants.push({
-          id: `mine-${mine.id}-${i}`,
-          name: `Охотник ${i + 1}`,
-          guild: "—",
-          power: Math.round(expectedBm(mine.bmLevel ?? mine.minLevel) * (0.88 + i * 0.06)),
-          isPlayer: false,
-        });
-      }
-      state.mines[mine.id] = { occupants };
+      state.mines[mine.id] = { occupants: [] };
+    } else {
+      // Strip world bots — only the player may occupy mines.
+      const player = (state.mines[mine.id].occupants ?? []).filter((o) => o.isPlayer);
+      state.mines[mine.id].occupants = player;
     }
   }
   state.farm = ensureFarmState(state.farm);
   if (!state.gems) state.gems = [];
-  if (state.resources.blessing == null) state.resources.blessing = 0;
+  // Migrate legacy blessing currency → inventory stacks.
+  const legacySparks = state.resources.blessing ?? 0;
+  if (legacySparks > 0) {
+    const { leftoverCurrency } = migrateBlessingCurrencyToItems(state.inventory, legacySparks);
+    state.resources.blessing = leftoverCurrency;
+  } else if (state.resources.blessing == null) {
+    state.resources.blessing = 0;
+  }
+  // Ensure artifact equipment slots exist on old saves.
+  for (const slot of ["artifact1", "artifact2", "artifact3"] as const) {
+    if (!(slot in state.equipment)) state.equipment[slot] = null;
+  }
+  if (state.combat.pullDelay == null) state.combat.pullDelay = 0;
+  if (state.combat.pendingSpawnBoss == null) state.combat.pendingSpawnBoss = false;
+  if (state.meta.bagExtraRows == null) state.meta.bagExtraRows = 0;
+  if (state.meta.potionBuffs) {
+    state.meta.potionBuffs = prunePotionBuffs(state.meta.potionBuffs);
+  }
+  {
+    const need = inventoryCapacity(state.meta.bagExtraRows ?? 0);
+    if (state.inventory.length < need) {
+      while (state.inventory.length < need) state.inventory.push(null);
+    }
+  }
   if (!state.progression.locations) state.progression.locations = {};
   for (const loc of LOCATIONS) {
     if (!state.progression.locations[loc.id]) {
@@ -390,10 +441,12 @@ function tryPlaceLoot(state: Draft, dropBonus: number, monsterLevel: number, kin
   const rarity = rollRarity(
     dropBonus + rarityBonusFor(kind) + (spot?.rarityBias ?? 0) + (locDef?.rarityBias ?? 0),
   );
+  const artifactSlot = maybeRollArtifactSlot(kind);
   const item = generateItem({
     itemLevel: Math.max(1, monsterLevel + (kind === "boss" ? 2 : 0) + (spot?.tier === "apex" ? 2 : 0)),
     rarity,
     preferredClass: state.character.classId,
+    slot: artifactSlot ?? undefined,
   });
   receiveLootItem(state, item, kind === "boss" ? "boss" : "normal");
 }
@@ -430,13 +483,10 @@ function grantWorkshopLoot(state: Draft, dropBonus: number, monsterLevel: number
   const endgame = endgameDropsFor(locId);
   if (endgame && Math.random() < endgame.sparkChance * rollMult) {
     const sparks = irand(endgame.sparkMin, endgame.sparkMax) * bundle;
-    state.resources.blessing = (state.resources.blessing ?? 0) + sparks;
-    pushLog(
+    grantMaterialItem(
       state,
-      "loot",
-      isBoss
-        ? `Трофей босса · ${BLESSING_MATERIAL_LABEL}: +${sparks}`
-        : `${BLESSING_MATERIAL_LABEL}: +${sparks}`,
+      createBlessingSparkStack(sparks),
+      isBoss ? "Трофей босса" : "Добыча",
     );
   }
 
@@ -467,15 +517,26 @@ function grantLoot(state: Draft, dropBonus: number, monsterLevel: number, kind: 
   }
   grantWorkshopLoot(state, dropBonus, monsterLevel, kind);
   grantEchoShards(state, kind);
+  grantSocketHammers(state, kind);
+  if (kind === "trash" || kind === "boss") {
+    const herb = rollPotionIngredientDrop(state.combat.locationId);
+    if (herb) grantMaterialItem(state, herb, kind === "boss" ? "Трофей босса" : "Добыча");
+  }
 }
 
 function grantMaterialItem(state: Draft, item: Item, tag: string) {
-  if (isEchoShard(item)) {
+  if (isMaterialItem(item) && item.materialId) {
     for (const existing of state.inventory) {
-      if (isEchoShard(existing)) {
-        existing.qty = echoQty(existing) + echoQty(item);
+      if (existing && mergeMaterialOnto(existing, item)) {
         if (!catchupActive) {
-          pushLog(state, "loot", `${tag}: ${ECHO_SHARD_PLURAL} ×${echoQty(item)}`);
+          const label = isBlessingSpark(item)
+            ? BLESSING_SPARK_PLURAL
+            : isSocketHammer(item)
+              ? SOCKET_HAMMER_PLURAL
+              : isEchoShard(item)
+                ? ECHO_SHARD_PLURAL
+                : item.name;
+          pushLog(state, "loot", `${tag}: ${label} ×${materialQty(item)}`);
         }
         return;
       }
@@ -504,13 +565,21 @@ function grantMaterialItem(state: Draft, item: Item, tag: string) {
   }
   state.inventory[slot] = item;
   if (!catchupActive) {
-    pushLog(state, "loot", `${tag}: ${item.name}${isEchoShard(item) ? ` ×${echoQty(item)}` : ""}`);
+    const qtyNote = isMaterialItem(item) ? ` ×${materialQty(item)}` : "";
+    pushLog(state, "loot", `${tag}: ${item.name}${qtyNote}`);
   }
 }
 
 function grantEchoShards(state: Draft, kind: LootKind) {
   const dropKind = kind === "boss" ? "boss" : kind === "pvp" ? "pvp" : "trash";
   grantMaterialItem(state, createEchoShardStack(echoDropQty(dropKind)), kind === "boss" ? "Трофей босса" : "Добыча");
+}
+
+function grantSocketHammers(state: Draft, kind: LootKind) {
+  const dropKind = kind === "boss" ? "boss" : kind === "pvp" ? "pvp" : "trash";
+  const qty = rollSocketHammerDrop(dropKind);
+  if (qty <= 0) return;
+  grantMaterialItem(state, createSocketHammerStack(qty), kind === "boss" ? "Трофей босса" : "Добыча");
 }
 
 export function craftEchoChest(state: Draft, rarity: Rarity): { ok: boolean; message: string } {
@@ -544,6 +613,105 @@ export function craftEchoChest(state: Draft, rarity: Rarity): { ok: boolean; mes
   const line = `Крафт: ${recipe.title} → ${item.name} [${RARITY_LABEL[item.rarity]}] ур. ${item.itemLevel}`;
   pushLog(state, "loot", line);
   return { ok: true, message: line };
+}
+
+/** Specific-slot craft costs ×10 the random chest of the same rarity. */
+export function craftEchoSpecific(
+  state: Draft,
+  rarity: Rarity,
+  slot: EquipSlot,
+): { ok: boolean; message: string } {
+  const recipe = echoChestRecipe(rarity);
+  if (!recipe) return { ok: false, message: "Нет такого рецепта" };
+  const cost = recipe.cost * 10;
+  const have = countEchoShards(state.inventory);
+  if (have < cost) {
+    return {
+      ok: false,
+      message: `Нужно ${cost} ${ECHO_SHARD_PLURAL.toLowerCase()} (есть ${have})`,
+    };
+  }
+  const empty = firstEmptyInv(state);
+  if (empty === -1 && !echoSpendFreesSlot(state.inventory, cost)) {
+    return { ok: false, message: "Сумка полна — освободите слот под предмет" };
+  }
+  if (!consumeEchoShards(state.inventory, cost)) {
+    return { ok: false, message: `Не хватает ${ECHO_SHARD_PLURAL.toLowerCase()}` };
+  }
+  const item = generateItem({
+    itemLevel: Math.max(1, state.character.level),
+    rarity: recipe.rarity,
+    preferredClass: state.character.classId,
+    slot,
+  });
+  const invSlot = firstEmptyInv(state);
+  if (invSlot === -1) {
+    grantMaterialItem(state, createEchoShardStack(cost), "Крафт");
+    return { ok: false, message: "Сумка полна — освободите слот под предмет" };
+  }
+  state.inventory[invSlot] = item;
+  const line = `Крафт ×10: ${SLOT_LABEL[slot]} → ${item.name} [${RARITY_LABEL[item.rarity]}]`;
+  pushLog(state, "loot", line);
+  return { ok: true, message: line };
+}
+
+export function craftPotion(
+  state: Draft,
+  recipeId: string,
+): { ok: boolean; message: string } {
+  const recipe = POTION_RECIPE_BY_ID[recipeId];
+  if (!recipe) return { ok: false, message: "Нет рецепта" };
+  if (state.resources.gold < recipe.gold) {
+    return { ok: false, message: `Нужно ${recipe.gold.toLocaleString("ru-RU")} золота` };
+  }
+  for (const need of recipe.ingredients) {
+    if (countMaterial(state.inventory, need.id) < need.qty) {
+      const def = POTION_INGREDIENT_BY_ID[need.id];
+      return { ok: false, message: `Мало: ${def?.name ?? need.id}` };
+    }
+  }
+  const empty = firstEmptyInv(state);
+  // Crafting may free a slot if ingredients wipe a stack — check after consume.
+  for (const need of recipe.ingredients) {
+    if (!consumeMaterial(state.inventory, need.id, need.qty)) {
+      return { ok: false, message: "Не хватает ингредиентов" };
+    }
+  }
+  state.resources.gold -= recipe.gold;
+  const potion = createPotionStack(recipe.id, 1);
+  if (!potion) return { ok: false, message: "Ошибка рецепта" };
+  const slot = firstEmptyInv(state);
+  if (slot === -1) {
+    // Refund roughly — put ingredients back is hard; place into overflow message.
+    grantMaterialItem(state, potion, "Крафт");
+    return { ok: false, message: "Сумка полна" };
+  }
+  state.inventory[slot] = potion;
+  const line = `Сварено: ${recipe.name}`;
+  pushLog(state, "loot", line);
+  return { ok: true, message: line };
+}
+
+export function usePotion(
+  state: Draft,
+  inventoryIndex: number,
+  now = Date.now(),
+): { ok: boolean; message: string } {
+  const item = state.inventory[inventoryIndex];
+  if (!item || !isPotionMaterial(item) || !item.materialId) {
+    return { ok: false, message: "Это не зелье" };
+  }
+  const recipe = POTION_RECIPE_BY_ID[item.materialId];
+  if (!recipe) return { ok: false, message: "Неизвестное зелье" };
+  const q = materialQty(item);
+  if (q <= 1) state.inventory[inventoryIndex] = null;
+  else item.qty = q - 1;
+  if (!state.meta.potionBuffs) state.meta.potionBuffs = [];
+  state.meta.potionBuffs = prunePotionBuffs(state.meta.potionBuffs, now).filter(
+    (b) => POTION_RECIPE_BY_ID[b.potionId]?.kind !== recipe.kind,
+  );
+  state.meta.potionBuffs.push({ potionId: recipe.id, expiresAt: now + POTION_DURATION_MS });
+  return { ok: true, message: `${recipe.name} · 30 мин` };
 }
 
 function gainXp(state: Draft, amount: number) {
@@ -599,7 +767,7 @@ function grantTowerClear(state: Draft, floor: number) {
     noteGuildOre(state.guild, bonus.ore);
   }
   if (bonus.sparks > 0) {
-    state.resources.blessing = (state.resources.blessing ?? 0) + bonus.sparks;
+    grantMaterialItem(state, createBlessingSparkStack(bonus.sparks), "Башня");
   }
   if (bonus.itemRarity) {
     const item = generateItem({
@@ -674,7 +842,7 @@ function grantBossClear(state: Draft, def: BossDef) {
     noteGuildOre(state.guild, bonus.ore);
   }
   if (bonus.sparks > 0) {
-    state.resources.blessing = (state.resources.blessing ?? 0) + bonus.sparks;
+    grantMaterialItem(state, createBlessingSparkStack(bonus.sparks), "Босс");
   }
   if (bonus.itemRarity) {
     const itemLevel =
@@ -719,7 +887,17 @@ export function leaveBossSession(state: Draft, reason: string) {
   evacuateFromDungeon(state, reason);
 }
 
+/** Queue next pack after a short pull delay (keeps skill CDs; softens HUD snap). */
+function queueSpawn(state: Draft, isBoss: boolean) {
+  state.combat.monster = null;
+  state.combat.monsterEffects = [];
+  state.combat.pullDelay = PULL_DELAY_SEC;
+  state.combat.pendingSpawnBoss = isBoss;
+}
+
 function spawnNext(state: Draft, isBoss: boolean) {
+  state.combat.pullDelay = 0;
+  state.combat.pendingSpawnBoss = false;
   if (isTowerLocationId(state.combat.locationId)) {
     spawnTowerGuardian(state);
     return;
@@ -743,8 +921,15 @@ function spawnNext(state: Draft, isBoss: boolean) {
     isBoss,
     danger: isBoss ? 1 : danger,
   });
+  if (isBoss && state.combat.monster) {
+    const m = state.combat.monster;
+    m.hp = Math.round(m.hp * LOCATION_BOSS_COMBAT_INDEX.hp);
+    m.maxHp = m.hp;
+    m.attack = Math.round(m.attack * LOCATION_BOSS_COMBAT_INDEX.atk);
+    m.defense = Math.round(m.defense * LOCATION_BOSS_COMBAT_INDEX.def);
+  }
   state.combat.monsterAtkAcc = 0;
-  state.combat.playerAtkAcc = 0;
+  // Keep playerAtkAcc so swing cadence carries across packs (no false CD-reset feel).
   onSinNewMonster(state);
 }
 
@@ -873,7 +1058,7 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
 
   // Hourly halls: endless trash farm, no floor/boss progression.
   if (isDungeonLocationId(locId)) {
-    spawnNext(state, false);
+    queueSpawn(state, false);
     return;
   }
 
@@ -895,7 +1080,7 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
       prog.floor += 1;
       pushLog(state, "boss", `Этап ${prog.floor - 1} пройден. Новый этаж: ${prog.floor}`);
     }
-    spawnNext(state, false);
+    queueSpawn(state, false);
     return;
   }
 
@@ -904,7 +1089,7 @@ function onKill(state: Draft, derivedXpBonus: number, dropBonus: number) {
     prog.bossReady = true;
     pushLog(state, "boss", `Босс этажа готов. Бросьте вызов, когда будете готовы.`);
   }
-  spawnNext(state, false);
+  queueSpawn(state, false);
 }
 
 /** End active dungeon when the wall-clock hour expires. */
@@ -1201,15 +1386,31 @@ function prepareSave(state: Draft) {
 }
 
 function tickFrame(state: Draft, dt: number, skipEffects: boolean) {
-  if (!state.combat.monster) {
-    spawnNext(state, false);
-  }
-
   state.combat.hitFlash = Math.max(0, state.combat.hitFlash - dt);
   state.combat.playerHitFlash = Math.max(0, state.combat.playerHitFlash - dt);
   if (!skipEffects) {
     const now = Date.now();
     state.combat.floatingTexts = state.combat.floatingTexts.filter((f) => now - f.spawnedAt < 1100);
+  }
+
+  // Skill CDs / GCD always tick — including during pull delay between packs.
+  for (const id of Object.keys(state.combat.skillCd)) {
+    state.combat.skillCd[id] = Math.max(0, (state.combat.skillCd[id] ?? 0) - dt);
+  }
+  state.combat.gcd = Math.max(0, (state.combat.gcd ?? 0) - dt);
+
+  if ((state.combat.pullDelay ?? 0) > 0) {
+    state.combat.pullDelay = Math.max(0, (state.combat.pullDelay ?? 0) - dt);
+    if ((state.combat.pullDelay ?? 0) <= 0) {
+      spawnNext(state, !!state.combat.pendingSpawnBoss);
+    } else {
+      finishFrame(state, skipEffects);
+      return;
+    }
+  }
+
+  if (!state.combat.monster) {
+    spawnNext(state, false);
   }
 
   const derived = statsOf(state);
@@ -1237,11 +1438,6 @@ function tickFrame(state: Draft, dt: number, skipEffects: boolean) {
       noteGuildOre(state.guild, add);
     }
   }
-
-  for (const id of Object.keys(state.combat.skillCd)) {
-    state.combat.skillCd[id] = Math.max(0, (state.combat.skillCd[id] ?? 0) - dt);
-  }
-  state.combat.gcd = Math.max(0, (state.combat.gcd ?? 0) - dt);
 
   if (!state.settings.autoBattle || !state.combat.monster) {
     finishFrame(state, skipEffects);

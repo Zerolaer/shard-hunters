@@ -151,6 +151,16 @@ export function EquipmentDoll() {
           <SlotCell slot="amulet" />
         </div>
       </div>
+      <div className="relative mt-3 w-full border-t border-white/10 pt-3">
+        <div className="mb-2 text-center text-[10px] uppercase tracking-[0.18em] text-amber-200/50">
+          Артефакты
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          <SlotCell slot="artifact1" />
+          <SlotCell slot="artifact2" />
+          <SlotCell slot="artifact3" />
+        </div>
+      </div>
     </div>
   );
 }

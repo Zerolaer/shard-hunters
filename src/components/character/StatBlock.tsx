@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { CORE_STAT_HINT, STAT_LABEL } from "@/lib/game/constants";
 import { collectGear, formatFullDigits } from "@/lib/game/formulas";
 import type { CoreStat } from "@/lib/game/types";
@@ -22,7 +23,8 @@ const COMBAT_ROWS = [
   { key: "speed", label: "Скорость", icon: Gauge },
 ] as const;
 
-/** Press-and-hold auto-allocate with accelerating repeat. */
+type BreakdownLine = { source: string; value: string };
+
 function useHoldAllocate(stat: CoreStat, enabled: boolean) {
   const allocateStat = useGameStore((s) => s.allocateStat);
   const holdRef = useRef<{
@@ -97,6 +99,49 @@ function StatPlusButton({ stat, enabled }: { stat: CoreStat; enabled: boolean })
   );
 }
 
+function BreakdownTip({
+  lines,
+  children,
+}: {
+  lines: BreakdownLine[];
+  children: React.ReactNode;
+}) {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  return (
+    <div
+      className="relative"
+      onMouseEnter={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
+      onMouseLeave={() => setAnchor(null)}
+    >
+      {children}
+      {anchor && lines.length > 0 && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              role="tooltip"
+              className="es-tooltip pointer-events-none fixed z-[220] min-w-[180px] max-w-[260px] px-2.5 py-2 text-[11px] leading-snug text-white/90"
+              style={{
+                left: Math.min(anchor.left, window.innerWidth - 280),
+                top: anchor.top - 8,
+                transform: "translateY(-100%)",
+              }}
+            >
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-white/40">Состав</div>
+              <ul className="space-y-0.5">
+                {lines.map((l) => (
+                  <li key={l.source} className="flex justify-between gap-3">
+                    <span className="text-white/55">{l.source}</span>
+                    <span className="tabular-nums text-white/90">{l.value}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
 export function StatBlock() {
   const character = useGameStore((s) => s.character);
   const equipment = useGameStore((s) => s.equipment);
@@ -104,14 +149,51 @@ export function StatBlock() {
   const gear = collectGear(equipment);
 
   const combatValue: Record<(typeof COMBAT_ROWS)[number]["key"], string> = {
-    dps: derived.dps.toFixed(1),
-    attack: String(derived.attack),
-    defense: String(derived.defense),
-    hp: `${Math.round(character.hp)}/${derived.maxHp}`,
+    dps: formatFullDigits(Math.round(derived.dps)),
+    attack: formatFullDigits(derived.attack),
+    defense: formatFullDigits(derived.defense),
+    hp: `${formatFullDigits(Math.round(character.hp))}/${formatFullDigits(derived.maxHp)}`,
     crit: `${derived.critChance.toFixed(1)}%`,
     critDmg: `${derived.critDamage.toFixed(0)}%`,
     accuracy: `${derived.accuracy.toFixed(1)}%`,
     speed: `${derived.attackInterval.toFixed(2)}с`,
+  };
+
+  const breakdowns: Record<(typeof COMBAT_ROWS)[number]["key"], BreakdownLine[]> = {
+    dps: [
+      { source: "Атака", value: formatFullDigits(derived.attack) },
+      { source: "Интервал", value: `${derived.attackInterval.toFixed(2)}с` },
+      { source: "Крит", value: `${derived.critChance.toFixed(1)}%` },
+    ],
+    attack: [
+      { source: "База / статы", value: formatFullDigits(Math.max(0, derived.attack - Math.round(gear.attack))) },
+      { source: "Экипировка", value: `+${formatFullDigits(Math.round(gear.attack))}` },
+    ],
+    defense: [
+      { source: "База / статы", value: formatFullDigits(Math.max(0, derived.defense - Math.round(gear.defense))) },
+      { source: "Экипировка", value: `+${formatFullDigits(Math.round(gear.defense))}` },
+    ],
+    hp: [
+      { source: "Макс. HP", value: formatFullDigits(derived.maxHp) },
+      { source: "Экипировка HP", value: `+${formatFullDigits(Math.round(gear.health))}` },
+      { source: "Выносливость", value: String(character.endurance + Math.round(gear.endurance)) },
+    ],
+    crit: [
+      { source: "База / ловкость", value: `${Math.max(0, derived.critChance - gear.critChance).toFixed(1)}%` },
+      { source: "Экипировка", value: `+${gear.critChance.toFixed(1)}%` },
+    ],
+    critDmg: [
+      { source: "База", value: `${Math.max(0, derived.critDamage - gear.critDamage).toFixed(0)}%` },
+      { source: "Экипировка", value: `+${gear.critDamage.toFixed(0)}%` },
+    ],
+    accuracy: [
+      { source: "База / ловкость", value: `${Math.max(0, derived.accuracy - gear.accuracy).toFixed(1)}%` },
+      { source: "Экипировка", value: `+${gear.accuracy.toFixed(1)}%` },
+    ],
+    speed: [
+      { source: "Интервал атаки", value: `${derived.attackInterval.toFixed(2)}с` },
+      { source: "Ловкость", value: String(character.agility + Math.round(gear.agility)) },
+    ],
   };
 
   return (
@@ -127,10 +209,7 @@ export function StatBlock() {
           </div>
         </div>
         <div className="text-right text-[11px] leading-tight text-white/40">
-          <div>DPS {derived.dps.toFixed(1)}</div>
-          <div className="tabular-nums">
-            {Math.round(character.hp)}/{derived.maxHp} HP
-          </div>
+          <div>DPS {formatFullDigits(Math.round(derived.dps))}</div>
         </div>
       </div>
 
@@ -172,9 +251,11 @@ export function StatBlock() {
       </div>
 
       <div className="rp-card space-y-1 p-2.5">
-        <div className="px-1 pb-1 text-[10px] uppercase tracking-[0.14em] text-white/35">Бой</div>
+        <div className="px-1 pb-1 text-[10px] uppercase tracking-[0.14em] text-white/35">Характеристики</div>
         {COMBAT_ROWS.map((row) => (
-          <RpRow key={row.key} icon={row.icon} label={row.label} value={combatValue[row.key]} />
+          <BreakdownTip key={row.key} lines={breakdowns[row.key]}>
+            <RpRow icon={row.icon} label={row.label} value={combatValue[row.key]} />
+          </BreakdownTip>
         ))}
       </div>
     </div>

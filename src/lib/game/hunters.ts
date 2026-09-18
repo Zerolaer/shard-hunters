@@ -8,7 +8,7 @@ import { LOCATIONS, recommendedLocationId } from "./locations";
 import { hash32, mulberry32 } from "./rng";
 import { HUNTER_CLASS_IDS, type GameData, type HunterActivity, type HunterArchetype, type HunterClass, type WorldHunter } from "./types";
 
-export const WORLD_HUNTER_COUNT = 100;
+export const WORLD_HUNTER_COUNT = 0;
 export const HUNTER_LEVEL_CAP = 100;
 /** Bump to rebuild the living roster (fresh starters, not pre-leveled veterans). */
 export const HUNTER_ROSTER_GEN = 2;
@@ -227,8 +227,10 @@ function activityLabel(bot: Pick<WorldHunter, "activity" | "level" | "power" | "
 }
 
 function assignGuild(power: number, arch: HunterArchetype, rng: () => number) {
+  if (!WORLD_GUILDS.length) return "";
   const eligible = WORLD_GUILDS.filter((g) => power >= g.minBm * 0.85);
   const pool = eligible.length ? eligible : WORLD_GUILDS;
+  if (!pool.length) return "";
   if (arch === "casual") {
     const soft = pool.filter((g) => g.minBm < 2000);
     const use = soft.length ? soft : pool;
@@ -325,7 +327,7 @@ function createHunter(index: number, now: number): WorldHunter {
   const bot: WorldHunter = {
     id,
     name: hunterName(index),
-    guild: WORLD_GUILDS[index % WORLD_GUILDS.length]!.name,
+    guild: "",
     classId,
     avatarId,
     archetype,
@@ -364,30 +366,19 @@ function syncLeaderboardFromHunters(state: { worldHunters: WorldHunter[]; leader
 }
 
 export function ensureHunters(state: GameData, now = Date.now()) {
-  if (
-    !Array.isArray(state.worldHunters) ||
-    state.worldHunters.length !== WORLD_HUNTER_COUNT ||
-    state.meta.hunterRoster !== HUNTER_ROSTER_GEN
-  ) {
-    state.worldHunters = createWorldHunters(now);
+  // Bots disabled — ranking/world rivals are player-only for now.
+  if (!Array.isArray(state.worldHunters) || state.worldHunters.length > 0) {
+    state.worldHunters = [];
     state.meta.hunterRoster = HUNTER_ROSTER_GEN;
   }
   if (!Array.isArray(state.leaderboard)) state.leaderboard = [];
+  state.leaderboard = [];
   if (state.meta.hunterAcc == null) state.meta.hunterAcc = 0;
+  void now;
 }
 
-export function simulateHunters(state: GameData, dt: number, now = Date.now()) {
+export function simulateHunters(state: GameData, _dt: number, now = Date.now()) {
   ensureHunters(state, now);
-  const acc = (state.meta.hunterAcc ?? 0) + Math.max(0, dt);
-  if (acc < HUNTER_STEP && dt < 8) {
-    state.meta.hunterAcc = acc;
-    return;
-  }
-  state.meta.hunterAcc = acc % HUNTER_STEP;
-  const seconds = acc - state.meta.hunterAcc;
-  if (seconds <= 0) return;
-  for (const bot of state.worldHunters) simulateOne(bot, seconds, now);
-  syncLeaderboardFromHunters(state);
 }
 
 export interface RankingRow {

@@ -138,11 +138,7 @@ export function BuildPresetBar({ mode }: { mode: "classic" | "sin" }) {
             </button>
           ) : null}
         </div>
-        {pref ? (
-          <span className="text-[10px] text-[#8aa0b4]">
-            активен: {preferredClassic?.name ?? preferredSin?.name ?? pref}
-          </span>
-        ) : null}
+        {pref ? null : null}
       </div>
       <p
         className={cn(

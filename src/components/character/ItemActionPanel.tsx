@@ -1,25 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Coins,
-  Hammer,
-  PackageOpen,
-  Recycle,
-  Scale,
-  Shirt,
-  Wrench,
-  X,
-} from "lucide-react";
+import { FlaskConical, Coins, Hammer, PackageOpen, Recycle, Scale, Shirt, Wrench, X } from "lucide-react";
 import { MAX_ENHANCE } from "@/lib/game/constants";
 import { ENHANCE_SAFE_LEVELS } from "@/lib/game/enhance";
 import { canWearItem } from "@/lib/game/equipment";
 import { echoQty, isMaterialItem } from "@/lib/game/echoCraft";
+import { isPotionIngredient, isPotionMaterial, POTION_INGREDIENT_BY_ID, POTION_RECIPE_BY_ID, potionBlurb } from "@/lib/game/potions";
 import type { EquipSlot, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { cn } from "@/lib/cn";
 import { ItemInspector } from "./ItemTooltip";
+import { spotsForLocation } from "@/lib/game/spots";
 
 const ACTION_BTN =
   "es-btn es-inv-control !h-9 w-full min-w-0 justify-center whitespace-nowrap px-2 text-[11px]";
@@ -53,6 +46,8 @@ export function ItemActionPanel({
   const sellItem = useGameStore((s) => s.sellItem);
   const equipItem = useGameStore((s) => s.equipItem);
   const unequipSlot = useGameStore((s) => s.unequipSlot);
+  const usePotion = useGameStore((s) => s.usePotion);
+  const selectSpot = useGameStore((s) => s.selectSpot);
   const classId = useGameStore((s) => s.character.classId);
   const openEnhanceModal = useUiStore((s) => s.openEnhanceModal);
   const dismissItemPanel = useUiStore((s) => s.dismissItemPanel);
@@ -66,6 +61,12 @@ export function ItemActionPanel({
   const item = found?.item ?? null;
   const inBag = found?.inBag ?? false;
   const material = !!item && isMaterialItem(item);
+  const potion = !!item && isPotionMaterial(item);
+  const ingredient = !!item && isPotionIngredient(item);
+  const potionRecipe = potion && item.materialId ? POTION_RECIPE_BY_ID[item.materialId] : null;
+  const ingredientDef =
+    ingredient && item.materialId ? POTION_INGREDIENT_BY_ID[item.materialId] : null;
+  const invIndex = item ? inventory.findIndex((it) => it?.id === item.id) : -1;
   const atMaxEnhance = !!item && !material && item.enhanceLevel >= MAX_ENHANCE;
   const wear = item && !material ? canWearItem(classId, item) : { ok: false, reason: "" };
   const bagActions = inBag && !selectionMode;
@@ -137,7 +138,15 @@ export function ItemActionPanel({
 
             {material ? (
               <p className="text-[11px] leading-snug text-[#8aa0b4]">
-                Материал крафта. Сложите {echoQty(item)} шт. в мастерской, чтобы открыть сундук эха на ваш уровень.
+                {item.materialId === "blessing-spark"
+                  ? "Искра благословения — расходник мастерской для благословения +15 вещей."
+                  : item.materialId === "socket-hammer"
+                    ? "Молоток пробоя — редкий инструмент. Один удар открывает гнёзда навсегда."
+                    : potionRecipe
+                      ? potionBlurb(potionRecipe)
+                      : ingredientDef
+                        ? `Ингредиент зелий. Фарм: ${ingredientDef.farmHint}.`
+                        : `Материал крафта. Сложите ${echoQty(item)} шт. в мастерской, чтобы открыть сундук эха на ваш уровень.`}
               </p>
             ) : (
               <section className="border-t border-white/10 pt-2.5">
@@ -204,17 +213,44 @@ export function ItemActionPanel({
           <section className="shrink-0 border-t border-white/10 px-2.5 pb-2 pt-2">
             {material ? (
               <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setWorkshopMode("craft");
-                    setTab("workshop");
-                  }}
-                  className={cn(ACTION_BTN, "es-btn-cyan")}
-                >
-                  <Wrench className="h-3 w-3 shrink-0" />
-                  Крафт
-                </button>
+                {potion && invIndex >= 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      usePotion(invIndex);
+                      dismiss();
+                    }}
+                    className={cn(ACTION_BTN, "es-btn-cyan")}
+                  >
+                    <FlaskConical className="h-3 w-3 shrink-0" />
+                    Выпить
+                  </button>
+                ) : ingredientDef ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const spots = spotsForLocation(ingredientDef.farmLocationId);
+                      if (spots[0]) selectSpot(spots[0].id);
+                      setTab("world");
+                    }}
+                    className={cn(ACTION_BTN, "es-btn-cyan")}
+                  >
+                    <PackageOpen className="h-3 w-3 shrink-0" />
+                    Фарм
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkshopMode("craft");
+                      setTab("workshop");
+                    }}
+                    className={cn(ACTION_BTN, "es-btn-cyan")}
+                  >
+                    <Wrench className="h-3 w-3 shrink-0" />
+                    Крафт
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={!bagActions}

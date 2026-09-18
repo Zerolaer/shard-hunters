@@ -37,7 +37,7 @@ import type {
   Monster,
   Rarity,
 } from "./types";
-import { EQUIP_SLOTS, RARITIES } from "./types";
+import { GEAR_SLOTS, RARITIES, isArtifactSlot } from "./types";
 
 export function rollRarity(dropBonus: number): Rarity {
   const boost = 1 + Math.max(0, dropBonus);
@@ -109,7 +109,7 @@ export function generateItem(opts: {
   classLock?: HunterClass;
 }): Item {
   const rarity = opts.rarity ?? rollRarity(opts.dropBonus ?? 0);
-  const slot = opts.slot ?? pick(EQUIP_SLOTS);
+  const slot = opts.slot ?? pick([...GEAR_SLOTS]);
   const itemLevel = Math.max(1, opts.itemLevel);
   const prefix = pick(NAME_PREFIX[rarity]);
   const classLock =
@@ -121,19 +121,28 @@ export function generateItem(opts: {
     ? pick(slot === "weapon" ? def.weaponBases : def.offhandBases)
     : pick(SLOT_BASE_NAME[slot]);
   const impl = implicits(slot, itemLevel, rarity);
+  // Artifacts lean slightly stronger on implicits — they can break on enhance.
+  const artMult = isArtifactSlot(slot) ? 1.18 : 1;
   return {
     id: uid(),
-    name: `${prefix} ${base}`,
+    name: isArtifactSlot(slot) ? `${prefix} ${pick(["Реликт", "Печать", "Осколок власти", "Талисман бездны"])}` : `${prefix} ${base}`,
     slot,
     rarity,
     itemLevel,
     enhanceLevel: 0,
     affixes: rollAffixes(itemLevel, rarity, slot),
-    implicitAttack: impl.attack,
-    implicitDefense: impl.defense,
-    implicitHealth: impl.health,
+    implicitAttack: Math.round(impl.attack * artMult),
+    implicitDefense: Math.round(impl.defense * artMult),
+    implicitHealth: Math.round(impl.health * artMult),
     classLock,
   };
+}
+
+/** Rare boss/trash chance to drop an artifact piece for one of the three slots. */
+export function maybeRollArtifactSlot(kind: LootKind): EquipSlot | null {
+  const chance = kind === "boss" ? 0.08 : kind === "pvp" ? 0.03 : 0.012;
+  if (Math.random() >= chance) return null;
+  return pick(["artifact1", "artifact2", "artifact3"] as const);
 }
 
 export function generateMonster(opts: {

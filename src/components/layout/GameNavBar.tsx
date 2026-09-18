@@ -93,7 +93,7 @@ export function GameNavBar() {
                 onClick={() => setTab(t.id)}
                 className={cn("game-nav-tab", active && "is-active")}
               >
-                <Icon className="h-[14px] w-[14px] shrink-0" />
+                <Icon className="h-[14px] w-[14px] shrink-0" fill="currentColor" strokeWidth={1.6} />
                 <span>{t.label}</span>
               </button>
             );

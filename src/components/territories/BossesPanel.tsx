@@ -226,27 +226,46 @@ export function BossesPanel() {
           : null}
 
         {sub === "personal"
-          ? PERSONAL_BOSSES.map((def) => {
-              const ch = def.chapter ?? 1;
-              const cleared = state.personalCleared >= ch;
-              const current = state.personalIndex === ch;
-              const unlocked = canEnterPersonal(state, def);
+          ? (() => {
+              const idx = state.personalIndex;
+              const window = PERSONAL_BOSSES.filter((def) => {
+                const ch = def.chapter ?? 1;
+                // Show recent clears, current, and a short look-ahead — full tower is 100.
+                return ch >= Math.max(1, idx - 2) && ch <= Math.min(PERSONAL_BOSSES.length, idx + 8);
+              });
               return (
-                <BossCard
-                  key={def.id}
-                  def={def}
-                  subtitle={`Глава ${ch}`}
-                  locked={locked || level < def.minLevel || !unlocked}
-                  weak={!locked && derived.powerScore < bossComfortBm(def)}
-                  ok={!locked && derived.powerScore >= bossRecommendedBm(def)}
-                  busy={busy}
-                  disabled={!unlocked || cleared || locked || busy || level < def.minLevel}
-                  status={cleared ? "пройден" : current ? "текущий" : unlocked ? "доступен" : "закрыт"}
-                  onEnter={() => setMsg(enterBoss("personal", def.id).message)}
-                  fighting={state.active?.defId === def.id}
-                />
+                <>
+                  <div className="es-plate px-3 py-2 text-[11px] text-[#8aa0b4]">
+                    Сюжетная башня: глава {idx}/{PERSONAL_BOSSES.length}
+                    {state.personalCleared > 0
+                      ? ` · пройдено ${state.personalCleared}`
+                      : ""}
+                    . БМ от ~1к до ~1млн.
+                  </div>
+                  {window.map((def) => {
+                    const ch = def.chapter ?? 1;
+                    const cleared = state.personalCleared >= ch;
+                    const current = state.personalIndex === ch;
+                    const unlocked = canEnterPersonal(state, def);
+                    return (
+                      <BossCard
+                        key={def.id}
+                        def={def}
+                        subtitle={`Глава ${ch}/${PERSONAL_BOSSES.length}`}
+                        locked={locked || level < def.minLevel || !unlocked}
+                        weak={!locked && derived.powerScore < bossComfortBm(def)}
+                        ok={!locked && derived.powerScore >= bossRecommendedBm(def)}
+                        busy={busy}
+                        disabled={!unlocked || cleared || locked || busy || level < def.minLevel}
+                        status={cleared ? "пройден" : current ? "текущий" : unlocked ? "доступен" : "закрыт"}
+                        onEnter={() => setMsg(enterBoss("personal", def.id).message)}
+                        fighting={state.active?.defId === def.id}
+                      />
+                    );
+                  })}
+                </>
               );
-            })
+            })()
           : null}
       </div>
 
@@ -283,76 +302,80 @@ function BossCard({
   const bonus = bossClearBonus(def);
   return (
     <div
-      className={cn("es-plate flex flex-col gap-2 p-3", fighting && "border-[#f59e0b]/35")}
-      style={{ boxShadow: fighting ? `inset 0 0 0 1px ${def.accent}55` : undefined }}
+      className={cn(
+        "overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0c]",
+        fighting && "border-[#f59e0b]/40",
+      )}
     >
-      <div className="flex items-start gap-2.5">
-        <div
-          className="es-slot flex h-10 w-10 shrink-0 items-center justify-center"
-          style={{ boxShadow: `inset 0 0 0 1px ${def.accent}55` }}
-        >
+      <div
+        className="relative h-32 w-full"
+        style={{
+          background: `linear-gradient(150deg, ${def.accent}66 0%, #161618 48%, #0a0a0c 100%)`,
+        }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_20%,rgba(255,255,255,0.14),transparent_50%)]" />
+        <div className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-black/40">
           <Swords className="h-4 w-4" style={{ color: def.accent }} />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2.5 pt-10">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-[13px] text-white">{def.name}</span>
-            <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-white/45">
+            <span className="font-display text-[17px] text-white">{def.name}</span>
+            <span className="rounded border border-white/15 bg-black/35 px-1.5 py-0.5 text-[10px] text-white/55">
               {status}
             </span>
-            {fighting ? (
-              <span className="inline-flex items-center gap-1 text-[10px] text-[#fbbf24]">
-                <Swords className="h-3 w-3" /> бой
+          </div>
+          <div className="mt-0.5 text-[11px] text-white/50">{subtitle}</div>
+        </div>
+      </div>
+      <div className="space-y-3 p-3">
+        <p className="text-[11px] leading-snug text-[#8aa0b4]">{def.blurb}</p>
+        <div className="text-[10px] uppercase tracking-[0.14em] text-white/35">Режим:</div>
+        <div className="rounded-xl border border-white/12 bg-white/[0.04] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12px] text-white">Фаза босса</span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[10px] tabular-nums",
+                ok ? "text-white/85" : weak ? "text-[#fda4af]" : "text-[#f0d78c]",
+              )}
+            >
+              <Zap className="h-3 w-3" />
+              {formatFullDigits(rec)} БМ
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] text-white/45">
+            <span className="inline-flex items-center gap-1">
+              <Coins className="h-3 w-3 text-[#e4c36a]" />
+              {formatFullDigits(bonus.gold)}
+            </span>
+            {bonus.ore > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <Pickaxe className="h-3 w-3" />
+                {formatFullDigits(bonus.ore)}
+              </span>
+            ) : null}
+            <span className="inline-flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              {formatFullDigits(bonus.shards)}
+            </span>
+            {bonus.gemRank ? (
+              <span className="inline-flex items-center gap-1">
+                <Gem className="h-3 w-3 text-[#e4c36a]" />
+                {RARITY_LABEL[bonus.gemRank]}
               </span>
             ) : null}
           </div>
-          <div className="mt-0.5 text-[10px] text-[#8aa0b4]">{subtitle}</div>
-          <p className="mt-1 text-[11px] leading-snug text-white/50">{def.blurb}</p>
+          <div className="mt-1 truncate text-[10px] text-white/30">{rewardLine(def)}</div>
         </div>
         <button
           type="button"
           disabled={disabled}
           onClick={onEnter}
-          className="es-btn es-btn-cyan es-inv-control shrink-0 px-2.5"
+          className="h-11 w-full rounded-xl bg-gradient-to-b from-[#f59e0b] to-[#b45309] text-[13px] font-semibold text-white shadow-[0_8px_24px_rgba(245,158,11,0.22)] transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Атака
+          {fighting ? "В бою" : "Атака"}
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 tabular-nums",
-            ok
-              ? "border-white/20 bg-white/10 text-white/85"
-              : weak
-                ? "border-[#fb7185]/30 bg-[#fb7185]/10 text-[#fda4af]"
-                : "border-[#e4c36a]/25 bg-[#e4c36a]/10 text-[#f0d78c]",
-          )}
-        >
-          <Zap className="h-3 w-3" />
-          БМ {formatFullDigits(rec)}
-        </span>
-        <span className="inline-flex items-center gap-1 text-white/40">
-          <Coins className="h-3 w-3 text-[#e4c36a]" />
-          {formatFullDigits(bonus.gold)}
-        </span>
-        {bonus.ore > 0 ? (
-          <span className="inline-flex items-center gap-1 text-white/40">
-            <Pickaxe className="h-3 w-3" />
-            {formatFullDigits(bonus.ore)}
-          </span>
-        ) : null}
-        <span className="inline-flex items-center gap-1 text-white/40">
-          <Sparkles className="h-3 w-3" />
-          {formatFullDigits(bonus.shards)}
-        </span>
-        {bonus.gemRank ? (
-          <span className="inline-flex items-center gap-1 text-white/40">
-            <Gem className="h-3 w-3 text-[#e4c36a]" />
-            {RARITY_LABEL[bonus.gemRank]}
-          </span>
-        ) : null}
-      </div>
-      <div className="truncate text-[10px] text-white/35">{rewardLine(def)}</div>
     </div>
   );
 }

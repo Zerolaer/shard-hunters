@@ -1,4 +1,5 @@
 import { MAX_ENHANCE } from "./constants";
+import { isArtifactSlot, type Item } from "./types";
 
 /**
  * Enhancement is a long chase, not a lottery.
@@ -12,13 +13,31 @@ import { MAX_ENHANCE } from "./constants";
  *   - the tail bottoms out at 30% instead of 10%, and nothing resets to zero.
  *
  * That lands +15 near 120 attempts. Check with `npx tsx scripts/enhance.ts`.
+ *
+ * Artifacts are the exception: past +3 a failed roll can destroy the relic.
  */
 export const ENHANCE_CHANCE = [
   1, 0.95, 0.92, 0.88, 0.84, 0.78, 0.72, 0.64, 0.54, 0.44, 0.34, 0.26, 0.2, 0.15, 0.11,
 ];
 
-/** Once reached, a failure can never knock the item below these. */
+/** Once reached, a failure can never knock normal gear below these. */
 export const ENHANCE_SAFE_LEVELS = [0, 5, 10, 13] as const;
+
+/** Artifacts can shatter on fail starting from attempts at this enhance level. */
+export const ARTIFACT_BREAK_FROM = 3;
+
+/**
+ * Chance the artifact is destroyed on a failed enhance at `currentLevel` (+N → +N+1).
+ * Index = current enhance level. Safe through +3 (index 0–2 attempts stay safe).
+ */
+export const ARTIFACT_BREAK_CHANCE = [
+  0, 0, 0, // +0..+2 → safe
+  0.08, // +3→+4
+  0.11, 0.15, // +4..+5
+  0.2, 0.25, 0.3, // +6..+8
+  0.35, 0.4, 0.45, // +9..+11
+  0.5, 0.55, 0.6, // +12..+14
+];
 
 export function enhanceSuccessChance(currentLevel: number) {
   if (currentLevel >= MAX_ENHANCE) return 0;
@@ -47,17 +66,31 @@ export function enhanceCost(currentLevel: number, itemLevel = 1) {
   return { gold, ore, shards };
 }
 
-export type EnhanceFailKind = "stay" | "down";
+export type EnhanceFailKind = "stay" | "down" | "break";
 
-export function enhanceFailKind(currentLevel: number): EnhanceFailKind {
+export function artifactBreakChance(currentLevel: number) {
+  if (currentLevel < ARTIFACT_BREAK_FROM) return 0;
+  return ARTIFACT_BREAK_CHANCE[currentLevel] ?? 0.6;
+}
+
+export function enhanceFailKind(item: Item): EnhanceFailKind {
+  const currentLevel = item.enhanceLevel;
+  if (isArtifactSlot(item.slot)) {
+    const br = artifactBreakChance(currentLevel);
+    if (br > 0 && Math.random() < br) return "break";
+    if (currentLevel < 8) return "stay";
+    if (currentLevel <= enhanceSafeFloor(currentLevel)) return "stay";
+    return Math.random() < 0.7 ? "down" : "stay";
+  }
   if (currentLevel < 8) return "stay";
   if (currentLevel <= enhanceSafeFloor(currentLevel)) return "stay";
   return Math.random() < 0.7 ? "down" : "stay";
 }
 
-/** Where an item lands after a failed attempt. */
+/** Where an item lands after a failed attempt (non-break). */
 export function enhanceLevelAfterFail(currentLevel: number) {
-  if (enhanceFailKind(currentLevel) === "stay") return currentLevel;
+  if (currentLevel < 8) return currentLevel;
+  if (currentLevel <= enhanceSafeFloor(currentLevel)) return currentLevel;
   return Math.max(enhanceSafeFloor(currentLevel), currentLevel - 1);
 }
 

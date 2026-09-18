@@ -42,11 +42,6 @@ export function CharacterPanel() {
                 <Zap className="h-3.5 w-3.5" />
                 {formatFullDigits(derived.powerScore)}
               </span>
-              {def ? (
-                <span className="text-[11px] text-white/40" style={{ color: `${accent}cc` }}>
-                  {def.name}
-                </span>
-              ) : null}
             </div>
             <div className="mt-2 max-w-[280px]">
               <div className="mb-1 flex justify-between text-[10px] text-white/40">

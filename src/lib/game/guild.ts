@@ -1,10 +1,9 @@
 import { guildXpToNext } from "./balance";
-import { NPC_HUNTERS } from "./constants";
 import { localDayKey } from "./dungeons";
-import { irand } from "./rng";
+import { createBlessingSparkStack, isBlessingSpark, materialQty } from "./materials";
+import { createIngredientStack } from "./potions";
 import type {
   GameData,
-  GuildApplication,
   GuildBossState,
   GuildJoinMode,
   GuildMember,
@@ -33,78 +32,7 @@ export interface WorldGuildDef {
   maxMembers: number;
 }
 
-export const WORLD_GUILDS: WorldGuildDef[] = [
-  {
-    id: "void-blades",
-    name: "Клинки Пустоты",
-    tag: "VOID",
-    motd: "Режем тень. Открытый набор.",
-    accent: "#818cf8",
-    joinMode: "open",
-    minBm: 0,
-    maxMembers: 40,
-  },
-  {
-    id: "gold-crown",
-    name: "Золотая Корона",
-    tag: "GOLD",
-    motd: "Казна любит сильных. Заявка, затем смотр.",
-    accent: "#fbbf24",
-    joinMode: "request",
-    minBm: 1800,
-    maxMembers: 28,
-  },
-  {
-    id: "night-wolves",
-    name: "Ночные Волки",
-    tag: "WOLF",
-    motd: "Только по зову стаи.",
-    accent: "#94a3b8",
-    joinMode: "invite",
-    minBm: 0,
-    maxMembers: 18,
-  },
-  {
-    id: "ashen-dawn",
-    name: "Пепельный Рассвет",
-    tag: "ASH",
-    motd: "Первый костёр охотников. Вход свободный.",
-    accent: "#fb7185",
-    joinMode: "open",
-    minBm: 0,
-    maxMembers: 36,
-  },
-  {
-    id: "essence-choir",
-    name: "Хор Эссенции",
-    tag: "ECHO",
-    motd: "Поём жилам. Нужна мощь.",
-    accent: "#22d3ee",
-    joinMode: "request",
-    minBm: 8000,
-    maxMembers: 22,
-  },
-  {
-    id: "iron-pact",
-    name: "Железный Пакт",
-    tag: "IRON",
-    motd: "Щит и штольня. Берём всех, кто держит строй.",
-    accent: "#a8a29e",
-    joinMode: "open",
-    minBm: 600,
-    maxMembers: 32,
-  },
-  {
-    id: "dusk-court",
-    name: "Двор Сумерек",
-    tag: "DUSK",
-    motd: "Элита рифта. Заявка и смотр БМ.",
-    accent: "#c084fc",
-    joinMode: "request",
-    minBm: 22000,
-    maxMembers: 16,
-  },
-];
+export const WORLD_GUILDS: WorldGuildDef[] = [];
 
 export const WORLD_GUILD_BY_ID: Record<string, WorldGuildDef> = Object.fromEntries(
   WORLD_GUILDS.map((g) => [g.id, g]),
@@ -245,6 +173,8 @@ export interface GuildShopItem {
   ore?: number;
   shards?: number;
   blessing?: number;
+  materialId?: string;
+  materialQty?: number;
 }
 
 export const GUILD_SHOP: GuildShopItem[] = [
@@ -252,6 +182,11 @@ export const GUILD_SHOP: GuildShopItem[] = [
   { id: "gold-crate", name: "Мешок золота", blurb: "На заточку и вход.", coins: 32, gold: 2200 },
   { id: "shard-box", name: "Горсть осколков", blurb: "Редкая валюта усиления.", coins: 52, shards: 14 },
   { id: "bless-vial", name: "Искры благословения", blurb: "Мастерская.", coins: 78, blessing: 4 },
+  { id: "herb-ash", name: "Пепельный корень", blurb: "Ингредиент зелий.", coins: 12, materialId: "herb-ash", materialQty: 1 },
+  { id: "herb-frost", name: "Инейник", blurb: "Ингредиент зелий.", coins: 22, materialId: "herb-frost", materialQty: 1 },
+  { id: "herb-ember", name: "Угольная ягода", blurb: "Ингредиент зелий.", coins: 36, materialId: "herb-ember", materialQty: 1 },
+  { id: "herb-void", name: "Пустоцвет", blurb: "Ингредиент зелий.", coins: 54, materialId: "herb-void", materialQty: 1 },
+  { id: "herb-myth", name: "Миф-пыльца", blurb: "Ингредиент зелий.", coins: 78, materialId: "herb-myth", materialQty: 1 },
 ];
 
 export interface GuildBuffDef {
@@ -382,11 +317,13 @@ export function normalizeGuild(raw: Partial<GuildState> | undefined | null): Gui
   const base = emptyGuildState();
   if (!raw) return base;
   const id = raw.id === undefined || raw.id === "" ? null : raw.id;
-  const members = (raw.members ?? []).map((m) => ({
-    ...m,
-    role: m.role ?? (m.isPlayer && (raw.createdByPlayer || raw.id === "ashen-dawn") ? "leader" : m.isPlayer ? "member" : "member"),
-    power: m.power ?? 0,
-  }));
+  const members = (raw.members ?? [])
+    .filter((m) => m.isPlayer)
+    .map((m) => ({
+      ...m,
+      role: m.role ?? (raw.createdByPlayer ? "leader" : "member"),
+      power: m.power ?? 0,
+    }));
   if (id && members.length && !members.some((m) => m.isPlayer)) {
     /* keep as-is; caller may inject */
   }
@@ -411,8 +348,9 @@ export function normalizeGuild(raw: Partial<GuildState> | undefined | null): Gui
     ),
     quests: raw.quests?.length ? raw.quests : defaultQuests(),
     questDay: raw.questDay ?? "",
-    applications: [...(raw.applications ?? [])],
-    invites: [...(raw.invites ?? [])],
+    // Drop NPC applicants and all bot/world invites — guilds are player-only.
+    applications: (raw.applications ?? []).filter((a) => !a.incoming),
+    invites: [],
     boss: raw.boss ?? null,
     createdByPlayer: !!raw.createdByPlayer,
   };
@@ -464,48 +402,17 @@ export function sanitizeGuildName(raw: string) {
   return raw.trim().slice(0, 22);
 }
 
-function npcMember(name: string, contribution: number, power: number, role: GuildRole = "member"): GuildMember {
-  return {
-    id: gid("m"),
-    name,
-    contribution,
-    isPlayer: false,
-    role,
-    power,
-  };
-}
-
-function pickHunters(count: number, exclude: Set<string>) {
-  const pool = NPC_HUNTERS.filter((n) => !exclude.has(n));
-  const out: string[] = [];
-  const used = new Set<string>();
-  while (out.length < count && pool.length > used.size) {
-    const n = pool[irand(0, pool.length - 1)]!;
-    if (used.has(n)) continue;
-    used.add(n);
-    out.push(n);
-  }
-  return out;
-}
-
-export function seedWorldGuildMembers(def: WorldGuildDef, playerName: string, playerPower: number): GuildMember[] {
-  const names = pickHunters(Math.min(6, worldGuildOccupancy(def.id)), new Set([playerName]));
-  const members: GuildMember[] = [
+export function seedWorldGuildMembers(_def: WorldGuildDef, playerName: string, playerPower: number): GuildMember[] {
+  return [
     {
       id: "player",
       name: playerName,
       contribution: 0,
       isPlayer: true,
-      role: "member",
+      role: "leader",
       power: playerPower,
     },
   ];
-  names.forEach((name, i) => {
-    members.push(
-      npcMember(name, 180 + i * 90 + irand(0, 120), Math.round(playerPower * (0.7 + i * 0.08)), i === 0 ? "leader" : "member"),
-    );
-  });
-  return members;
 }
 
 export function addGuildXp(guild: GuildState, amount: number) {
@@ -570,56 +477,7 @@ export function tickGuild(state: GameData, now = Date.now()) {
     player.name = state.character.name;
     player.power = player.power ?? 0;
   }
-
-  if (!g.id && g.invites.length === 0 && Math.random() < 0.00008) {
-    const def = WORLD_GUILDS.find((w) => w.joinMode === "invite") ?? WORLD_GUILDS[0]!;
-    g.invites.push({
-      id: gid("inv"),
-      hunterId: "world",
-      name: def.name,
-      power: 0,
-      guildId: def.id,
-      guildName: def.name,
-      outgoing: false,
-    });
-  }
-
-  if (g.id && g.createdByPlayer && canManageGuild(g) && g.joinMode !== "invite") {
-    if (g.applications.filter((a) => a.incoming).length < 2 && Math.random() < 0.00012) {
-      const taken = new Set(g.members.map((m) => m.name));
-      const name = pickHunters(1, taken)[0];
-      if (name) {
-        g.applications.push({
-          id: gid("app"),
-          hunterId: gid("h"),
-          name,
-          power: Math.round((player?.power ?? 400) * (0.55 + Math.random() * 0.7)),
-          incoming: true,
-          guildId: g.id,
-          guildName: g.name,
-        });
-      }
-    }
-  }
-
-  if (!g.id) {
-    for (const app of [...g.applications]) {
-      if (app.incoming) continue;
-      const def = WORLD_GUILD_BY_ID[app.guildId];
-      if (!def || def.joinMode !== "request") continue;
-      if (Math.random() > 0.012) continue;
-      g.applications = g.applications.filter((a) => a.id !== app.id);
-      g.invites.push({
-        id: gid("inv"),
-        hunterId: "world",
-        name: def.name,
-        power: 0,
-        guildId: def.id,
-        guildName: def.name,
-        outgoing: false,
-      });
-    }
-  }
+  // No NPC applications / world-guild bot invites — player-founded guilds only.
 }
 
 export function claimQuestReward(guild: GuildState, defId: string): { ok: boolean; message: string } {
@@ -684,7 +542,45 @@ export function buyGuildShopItem(
   if (item.gold) state.resources.gold += item.gold;
   if (item.ore) state.resources.ore += item.ore;
   if (item.shards) state.resources.shards += item.shards;
-  if (item.blessing) state.resources.blessing = (state.resources.blessing ?? 0) + item.blessing;
+  if (item.blessing) {
+    let placed = false;
+    for (const it of state.inventory) {
+      if (it && isBlessingSpark(it)) {
+        it.qty = materialQty(it) + item.blessing;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      const empty = state.inventory.findIndex((c) => c == null);
+      if (empty >= 0) {
+        state.inventory[empty] = createBlessingSparkStack(item.blessing);
+        placed = true;
+      }
+    }
+    if (!placed) state.resources.blessing = (state.resources.blessing ?? 0) + item.blessing;
+  }
+  if (item.materialId && (item.materialQty ?? 0) > 0) {
+    const stack = createIngredientStack(item.materialId, item.materialQty ?? 1);
+    if (stack) {
+      let placed = false;
+      for (const it of state.inventory) {
+        if (it && it.kind === "material" && it.materialId === item.materialId) {
+          it.qty = materialQty(it) + materialQty(stack);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        const empty = state.inventory.findIndex((c) => c == null);
+        if (empty >= 0) {
+          state.inventory[empty] = stack;
+          placed = true;
+        }
+      }
+      if (!placed) return { ok: false, message: "Сумка полна" };
+    }
+  }
   return { ok: true, message: `Куплено: ${item.name}` };
 }
 
@@ -838,10 +734,9 @@ export function acceptIncomingApplication(
   if (!canManageGuild(g)) return { ok: false, message: "Нет прав" };
   const app = g.applications.find((a) => a.id === applicationId && a.incoming);
   if (!app) return { ok: false, message: "Нет заявки" };
-  if (g.members.length >= GUILD_MAX_MEMBERS) return { ok: false, message: "Гильдия полна" };
+  // NPC applicants are disabled — decline instead of adding bot members.
   g.applications = g.applications.filter((a) => a.id !== applicationId);
-  g.members.push(npcMember(app.name, 10, app.power));
-  return { ok: true, message: `${app.name} принят в гильдию` };
+  return { ok: false, message: "Набор NPC в гильдию отключён" };
 }
 
 export function declineIncomingApplication(guild: GuildState, applicationId: string) {
@@ -856,25 +751,9 @@ export function inviteHunterToGuild(
   const g = state.guild;
   if (!canManageGuild(g) || !g.id) return { ok: false, message: "Нет прав" };
   if (g.members.some((m) => m.name === hunter.name)) return { ok: false, message: "Уже в гильдии" };
-  if (g.members.length >= GUILD_MAX_MEMBERS) return { ok: false, message: "Гильдия полна" };
-  if (g.invites.some((i) => i.outgoing && i.hunterId === hunter.id)) {
-    return { ok: false, message: "Приглашение уже отправлено" };
-  }
-  const accepts = hunter.power <= (g.members.find((m) => m.isPlayer)?.power ?? 0) * 1.45 + 80;
-  if (accepts) {
-    g.members.push(npcMember(hunter.name, 8, hunter.power));
-    return { ok: true, message: `${hunter.name} принял приглашение` };
-  }
-  g.invites.push({
-    id: gid("inv"),
-    hunterId: hunter.id,
-    name: hunter.name,
-    power: hunter.power,
-    guildId: g.id,
-    guildName: g.name,
-    outgoing: true,
-  });
-  return { ok: true, message: `${hunter.name} думает над приглашением` };
+  void hunter;
+  // Ranking/world hunters are not guild members — no bot invites.
+  return { ok: false, message: "Приглашения охотников-NPC отключены" };
 }
 
 export function setGuildJoinMode(guild: GuildState, mode: GuildJoinMode): { ok: boolean; message: string } {

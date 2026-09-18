@@ -34,16 +34,21 @@ import {
   BLESSING_MATERIAL_LABEL,
   canBlessItem,
   canPunchItem,
+  countBlessingSparks,
+  countSocketHammers,
   GEM_BAG_SIZE,
   GEM_RANK_ACCENT,
   SOCKET,
+  SOCKET_HAMMER_NAME,
 } from "@/lib/game/workshop";
 import type { AffixStat, EquipSlot, Gem, GemRank, Item } from "@/lib/game/types";
 import { useGameStore } from "@/store/useGameStore";
 import { useUiStore } from "@/store/useUiStore";
 import { ItemGlyph } from "./EquipmentDoll";
 import { EchoCraftPanel } from "./EchoCraftPanel";
+import { GemFuseModal } from "./GemFuseModal";
 import { countEchoShards, ECHO_SHARD_PLURAL, isMaterialItem } from "@/lib/game/echoCraft";
+import { fusionNeed } from "@/lib/game/gems";
 
 function eligibleItems(inventory: Array<Item | null>, equipment: Record<EquipSlot, Item | null>) {
   const worn = Object.values(equipment).filter((it): it is Item => !!it);
@@ -104,7 +109,6 @@ export function WorkshopPanel() {
   const punchItem = useGameStore((s) => s.punchItem);
   const socketGem = useGameStore((s) => s.socketGem);
   const unsocketGem = useGameStore((s) => s.unsocketGem);
-  const fuseGems = useGameStore((s) => s.fuseGems);
   const discardGem = useGameStore((s) => s.discardGem);
 
   const mode = useUiStore((s) => s.workshopMode);
@@ -115,13 +119,15 @@ export function WorkshopPanel() {
   const [blessFx, setBlessFx] = useState<BlessFx>("idle");
   const [blessResult, setBlessResult] = useState<"ok" | "fail" | null>(null);
   const [quickBless, setQuickBless] = useState(false);
+  const [fuseRank, setFuseRank] = useState<GemRank | null>(null);
   const blessBusy = useRef(false);
   const quickBlessRef = useRef(quickBless);
   quickBlessRef.current = quickBless;
 
   const candidates = useMemo(() => eligibleItems(inventory, equipment), [inventory, equipment]);
   const item = candidates.find((it) => it.id === targetId) ?? candidates[0] ?? null;
-  const sparks = resources.blessing ?? 0;
+  const sparks = countBlessingSparks(inventory);
+  const hammers = countSocketHammers(inventory);
   const echoShards = countEchoShards(inventory);
   const equippedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -136,9 +142,7 @@ export function WorkshopPanel() {
     resources.shards >= BLESSING.cost.shards &&
     sparks >= BLESSING.cost.sparks;
   const canAffordPunch =
-    resources.gold >= SOCKET.cost.gold &&
-    resources.shards >= SOCKET.cost.shards &&
-    sparks >= SOCKET.cost.sparks;
+    resources.gold >= SOCKET.cost.gold && hammers >= SOCKET.cost.hammers;
 
   const byRank = useMemo(() => {
     const map = new Map<GemRank, Gem[]>();
@@ -230,10 +234,19 @@ export function WorkshopPanel() {
             {formatNumber(echoShards)} {ECHO_SHARD_PLURAL.toLowerCase()}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1">
-            <Sparkles className="h-3.5 w-3.5 text-[#f43f5e]" />
-            {formatNumber(sparks)} {BLESSING_MATERIAL_LABEL.toLowerCase()}
-          </span>
+          <>
+            <span className="inline-flex items-center gap-1">
+              <Sparkles className="h-3.5 w-3.5 text-[#f43f5e]" />
+              {formatNumber(sparks)} {BLESSING_MATERIAL_LABEL.toLowerCase()}
+              <span className="text-white/25">(в сумке)</span>
+            </span>
+            {mode === "socket" ? (
+              <span className="inline-flex items-center gap-1">
+                <Hammer className="h-3.5 w-3.5 text-[#94a3b8]" />
+                {formatNumber(hammers)} {SOCKET_HAMMER_NAME.toLowerCase()}
+              </span>
+            ) : null}
+          </>
         )}
         {message && mode !== "bless" ? <span className="text-white/70">{message}</span> : null}
       </div>
@@ -502,9 +515,10 @@ export function WorkshopPanel() {
                 {!item.sockets?.length ? (
                   <>
                     <p className="text-[11px] text-[#8aa0b4]">
-                      1–{SOCKET.max} гнезда, случайно и навсегда. Нужна блеснутая вещь.
+                      1–{SOCKET.max} гнезда, случайно и навсегда. Нужна блеснутая вещь, золото и{" "}
+                      {SOCKET_HAMMER_NAME.toLowerCase()}.
                     </p>
-                    <Cost gold={SOCKET.cost.gold} shards={SOCKET.cost.shards} sparks={SOCKET.cost.sparks} />
+                    <Cost gold={SOCKET.cost.gold} hammers={SOCKET.cost.hammers} />
                     <button
                       type="button"
                       onClick={() => run(() => punchItem(item.id))}
@@ -609,13 +623,17 @@ export function WorkshopPanel() {
                         {GEM_RANK_LABEL[rank]}
                       </span>
                       <span className="font-mono text-[11px] text-white/70">{list.length}</span>
-                      {next ? (
+                      {next || rank === "mythic" ? (
                         <button
                           type="button"
-                          onClick={() => run(() => fuseGems(rank))}
-                          disabled={list.length < GEMS_PER_FUSION}
+                          onClick={() => setFuseRank(rank)}
+                          disabled={list.filter((g) => !g.blessed).length < fusionNeed(rank)}
                           className="es-btn es-inv-control ml-auto px-2"
-                          title={`${GEMS_PER_FUSION} → 1 ${GEM_RANK_LABEL[next]}`}
+                          title={
+                            rank === "mythic"
+                              ? `${fusionNeed(rank)} → благнутый`
+                              : `${GEMS_PER_FUSION} → 1 ${GEM_RANK_LABEL[next!]}`
+                          }
                         >
                           <Merge className="h-3 w-3" /> Скрестить
                         </button>
@@ -648,6 +666,14 @@ export function WorkshopPanel() {
           </div>
         </div>
       )}
+      {fuseRank ? (
+        <GemFuseModal
+          rank={fuseRank}
+          open
+          onClose={() => setFuseRank(null)}
+          onDone={(msg) => setMessage(msg)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -669,9 +695,9 @@ function GemChip({
     .join(" · ");
   return (
     <span
-      className="es-chip !gap-1 !px-1.5 !py-1 text-[10px]"
+      className={cn("es-chip !gap-1 !px-1.5 !py-1 text-[10px]", gem.blessed && "item-blessed")}
       style={{ borderColor: armed ? accent : undefined }}
-      title={`${GEM_NAME[gem.rank]} — ${summary}`}
+      title={`${GEM_NAME[gem.rank]}${gem.blessed ? " · благнутый" : ""} — ${summary}`}
     >
       <button
         type="button"
@@ -689,21 +715,41 @@ function GemChip({
   );
 }
 
-function Cost({ gold, shards, sparks }: { gold: number; shards: number; sparks: number }) {
+function Cost({
+  gold,
+  shards,
+  sparks,
+  hammers,
+}: {
+  gold: number;
+  shards?: number;
+  sparks?: number;
+  hammers?: number;
+}) {
   return (
     <span className="inline-flex items-center gap-2 text-[11px] text-[#8aa0b4]">
       <span className="inline-flex items-center gap-1">
         <Coins className="h-3 w-3 text-[#fbbf24]" />
         {formatNumber(gold)}
       </span>
-      <span className="inline-flex items-center gap-1">
-        <GemIcon className="h-3 w-3 text-white/50" />
-        {shards}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <Sparkles className="h-3 w-3 text-[#f43f5e]" />
-        {sparks}
-      </span>
+      {shards != null ? (
+        <span className="inline-flex items-center gap-1">
+          <GemIcon className="h-3 w-3 text-white/50" />
+          {shards}
+        </span>
+      ) : null}
+      {sparks != null ? (
+        <span className="inline-flex items-center gap-1">
+          <Sparkles className="h-3 w-3 text-[#f43f5e]" />
+          {sparks}
+        </span>
+      ) : null}
+      {hammers != null ? (
+        <span className="inline-flex items-center gap-1">
+          <Hammer className="h-3 w-3 text-[#94a3b8]" />
+          {hammers}
+        </span>
+      ) : null}
     </span>
   );
 }

@@ -52,6 +52,9 @@ export const SLOT_ICONS: Record<EquipSlot, LucideIcon> = {
   offhand: Shield,
   ring: CircleDot,
   amulet: Gem,
+  artifact1: Sparkles,
+  artifact2: Sparkles,
+  artifact3: Sparkles,
 };
 
 export const RARITY_ICONS: Record<Rarity, LucideIcon> = {

@@ -1,5 +1,23 @@
 import { MAX_ENHANCE } from "./constants";
 import { isMaterialItem } from "./echoCraft";
+import {
+  consumeBlessingSparks,
+  consumeSocketHammers,
+  countBlessingSparks,
+  countSocketHammers,
+  createBlessingSparkStack,
+  createSocketHammerStack,
+  isBlessingSpark,
+  isSocketHammer,
+  materialQty,
+  mergeMaterialOnto,
+  migrateBlessingCurrencyToItems,
+  rollSocketHammerDrop,
+  BLESSING_SPARK_NAME,
+  BLESSING_SPARK_PLURAL,
+  SOCKET_HAMMER_NAME,
+  SOCKET_HAMMER_PLURAL,
+} from "./materials";
 import { emptySocketCount } from "./gems";
 import type { GemRank, Item } from "./types";
 
@@ -11,8 +29,7 @@ import type { GemRank, Item } from "./types";
  *   1. Благословение — a 15% roll that permanently lifts every stat on the item.
  *   2. Пробой — punches 1–3 sockets into a blessed item, once and for good.
  *
- * Both consume «искры благословения», which only drop in the endgame locations,
- * so the whole feature is gated behind combat power rather than behind time.
+ * Blessing sparks are inventory items; socket punch spends a rare hammer + gold.
  */
 
 export const BLESSING_MATERIAL_LABEL = "Искра благословения";
@@ -38,8 +55,9 @@ export const BLESSING = {
  */
 export const BLESSING_FAIL_DESTROYS_ITEM = false;
 
+/** Socket punch: gold + one consumable hammer from mob drops. */
 export const SOCKET = {
-  cost: { gold: 19_000, shards: 25, sparks: 8 },
+  cost: { gold: 19_000, hammers: 1 },
   /** Punch outcome: index 0 → one socket, index 2 → three. Sums to 1. */
   weights: [0.5, 0.34, 0.16] as const,
   max: 3,
@@ -135,4 +153,23 @@ export const GEM_RANK_ACCENT: Record<GemRank, string> = {
   epic: "#c084fc",
   legendary: "#fbbf24",
   mythic: "#fb7185",
+};
+
+export {
+  consumeBlessingSparks,
+  consumeSocketHammers,
+  countBlessingSparks,
+  countSocketHammers,
+  createBlessingSparkStack,
+  createSocketHammerStack,
+  isBlessingSpark,
+  isSocketHammer,
+  materialQty,
+  mergeMaterialOnto,
+  migrateBlessingCurrencyToItems,
+  rollSocketHammerDrop,
+  BLESSING_SPARK_NAME,
+  BLESSING_SPARK_PLURAL,
+  SOCKET_HAMMER_NAME,
+  SOCKET_HAMMER_PLURAL,
 };

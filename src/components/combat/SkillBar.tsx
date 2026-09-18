@@ -13,7 +13,7 @@ import {
   skillPowerRank,
 } from "@/lib/game/sin";
 import { isSkillUnlocked } from "@/lib/game/talents";
-import { useGameStore } from "@/store/useGameStore";
+import { useDerivedStats, useGameStore } from "@/store/useGameStore";
 import { SinGem } from "@/components/character/sin/SinGem";
 
 export function SkillBar() {
@@ -25,7 +25,9 @@ export function SkillBar() {
   const arts = useGameStore((s) => s.sinBuild?.arts ?? {});
   const sinRanks = useGameStore((s) => s.sinBuild?.ranks ?? {});
   const sinBuild = useGameStore((s) => s.sinBuild);
+  const derived = useDerivedStats();
   const accent = path ? SIN_PATH_BY_ID[path].accent : "#cfc9c6";
+  const hasteDenom = 1 + Math.max(0, derived.skillHaste);
 
   return (
     <div className="grid h-[52px] min-h-[52px] shrink-0 grid-cols-4 gap-2 overflow-visible max-lg:h-[48px] max-lg:min-h-[48px] max-lg:gap-1.5">
@@ -42,7 +44,9 @@ export function SkillBar() {
             : !isSkillUnlocked(ranks, id)
           : false;
         const cooldown = def && "cooldown" in def ? def.cooldown : 1;
-        const remainPct = def && cd > 0 ? Math.min(100, (cd / cooldown) * 100) : 0;
+        // Veil must use haste-applied CD length — remaining starts at base/(1+haste).
+        const appliedCd = Math.max(0.05, cooldown / hasteDenom);
+        const remainPct = def && cd > 0 ? Math.min(100, (cd / appliedCd) * 100) : 0;
         const readyPct = remainPct > 0 ? 100 - remainPct : 0;
         const Icon = id && isSinSkillId(id) ? iconForSkill(id) : Sparkles;
         const rank = id && isSinSkillId(id) ? skillPowerRank(sinBuild, id) : 0;

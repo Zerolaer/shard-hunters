@@ -87,6 +87,19 @@ export const TARGETS = {
  * armour, lifesteal, wards and every heal skill worthless. Idle regen is
  * generous on purpose: recovering between pulls should not be a waiting game.
  */
+/** Seconds of downtime after a pack dies before the next spawn (autobattle pacing). */
+export const PULL_DELAY_SEC = 0.55;
+
+/**
+ * Hidden combat index for open-world floor bosses. UI BM stays at location BM,
+ * but HP (and a mild ATK bump) scale so the fight lasts ~5× longer than trash.
+ */
+export const LOCATION_BOSS_COMBAT_INDEX = {
+  hp: 5,
+  atk: 1.35,
+  def: 1.15,
+} as const;
+
 export const REGEN = {
   inCombat: 0.0035,
   idle: 0.06,
@@ -780,6 +793,31 @@ export function combatPowerScore(p: {
       p.accuracy * w.accuracy +
       p.talentRankSum * w.talent +
       Math.max(0, p.guildLevel - 1) * w.guild,
+  );
+}
+
+/** Display BM for a live monster from its combat stats (not spot gate). */
+export function estimateMonsterBm(m: {
+  level: number;
+  maxHp: number;
+  attack: number;
+  defense: number;
+  attackInterval: number;
+}) {
+  const dps = m.attack / Math.max(0.45, m.attackInterval);
+  return Math.max(
+    1,
+    combatPowerScore({
+      attack: m.attack,
+      maxHp: m.maxHp,
+      defense: m.defense,
+      dps,
+      critChance: 8,
+      critDamage: 160,
+      accuracy: 92,
+      talentRankSum: Math.max(0, m.level - 1),
+      guildLevel: 1,
+    }),
   );
 }
 

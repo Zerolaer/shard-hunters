@@ -1,14 +1,16 @@
 import { GUILD_BUFF_BY_ID } from "./guild";
-import type { CombatEffect, GuildBuffState } from "./types";
+import { POTION_RECIPE_BY_ID, potionBlurb } from "./potions";
+import type { CombatEffect, GuildBuffState, PotionBuffState } from "./types";
 
-export type ActiveBuffSource = "combat" | "guild";
+export type ActiveBuffSource = "combat" | "guild" | "potion";
 
-/** Unified player aura for the persistent HUD. Combat lists hits/seconds; guild uses wall-clock expiry. */
+/** Unified player aura for the persistent HUD. Combat lists hits/seconds; guild/potion use wall-clock expiry. */
 export interface ActivePlayerBuff {
   key: string;
   name: string;
   icon: string;
   source: ActiveBuffSource;
+  description?: string;
   remainingSec?: number;
   remainingHits?: number;
   remainingStacks?: number;
@@ -25,6 +27,7 @@ export function listActivePlayerBuffs(
   state: {
     playerEffects?: CombatEffect[] | null;
     guildBuffs?: GuildBuffState[] | null;
+    potionBuffs?: PotionBuffState[] | null;
   },
   now = Date.now(),
 ): ActivePlayerBuff[] {
@@ -38,6 +41,7 @@ export function listActivePlayerBuffs(
       name: effect.name,
       icon: effect.icon,
       source: "combat",
+      description: effect.description,
       remainingSec: effect.remainingSec,
       remainingHits: effect.remainingHits,
       remainingStacks: effect.remainingStacks,
@@ -51,6 +55,21 @@ export function listActivePlayerBuffs(
       name: def?.name ?? buff.id,
       icon: `guild-${buff.id}`,
       source: "guild",
+      description: def?.blurb,
+      remainingSec: (buff.expiresAt - now) / 1000,
+    });
+  }
+
+  for (const buff of state.potionBuffs ?? []) {
+    if (buff.expiresAt <= now) continue;
+    const recipe = POTION_RECIPE_BY_ID[buff.potionId];
+    if (!recipe) continue;
+    out.push({
+      key: `potion:${recipe.kind}`,
+      name: recipe.name,
+      icon: `potion-${recipe.kind}`,
+      source: "potion",
+      description: potionBlurb(recipe),
       remainingSec: (buff.expiresAt - now) / 1000,
     });
   }
@@ -96,6 +115,9 @@ export function formatBuffCountdown(sec: number, compact = false): string {
 
 export function formatBuffTitle(buff: ActivePlayerBuff): string {
   const detail = formatBuffTitleDetail(buff);
+  const body = buff.description?.trim();
+  if (body && detail) return `${buff.name}\n${body}\n${detail}`;
+  if (body) return `${buff.name}\n${body}`;
   return detail ? `${buff.name} · ${detail}` : buff.name;
 }
 

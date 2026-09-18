@@ -38,7 +38,7 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingPersistName: string | null = null;
 let pendingPersistSnapshot: { state: unknown; version?: number } | null = null;
 let pendingPersistRaw: string | null = null;
-const PERSIST_FLUSH_MS = 1000;
+const PERSIST_FLUSH_MS = 6000;
 
 export function getSessionAccountId(): string | null {
   return activeAccountId;
@@ -220,7 +220,7 @@ function scheduleCloudSave(value: string) {
     const next = pendingCloudValue;
     pendingCloudValue = null;
     if (next) void pushCloudSave(next);
-  }, 1200);
+  }, 8000);
 }
 
 /**

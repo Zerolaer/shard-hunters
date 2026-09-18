@@ -67,6 +67,11 @@ function GuildBrowser() {
           </div>
         </div>
         <div className="space-y-2 p-3">
+          {WORLD_GUILDS.length === 0 ? (
+            <p className="px-1 py-6 text-center text-[12px] text-white/40">
+              Мировые гильдии отключены. Создайте свою справа.
+            </p>
+          ) : null}
           {invites.filter((i) => !i.outgoing).length > 0 ? (
             <div className="space-y-1.5">
               {invites

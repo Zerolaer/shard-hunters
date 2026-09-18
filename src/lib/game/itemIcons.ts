@@ -181,10 +181,15 @@ const SLOT_FALLBACK: Record<EquipSlot, string[]> = {
   offhand: ["slots/offhand.png", "bases/shchit.png", "bases/sfera.png"],
   ring: ["slots/ring.png", "bases/koltso.png", "bases/persten.png"],
   amulet: ["slots/amulet.png", "bases/amulet.png", "bases/talisman.png"],
+  artifact1: ["bases/talisman.png", "bases/sfera.png", "bases/amulet.png"],
+  artifact2: ["bases/talisman.png", "bases/sfera.png", "bases/amulet.png"],
+  artifact3: ["bases/talisman.png", "bases/sfera.png", "bases/amulet.png"],
 };
 
 const MATERIAL_ICONS: Record<string, string[]> = {
   "echo-shard": ["materials/echo-shard.png", "bases/sfera.png"],
+  "blessing-spark": ["bases/sfera.png", "bases/sfera_b.png", "materials/echo-shard.png"],
+  "socket-hammer": ["bases/klinok.png", "bases/topor.png", "slots/weapon.png"],
 };
 
 const RARITY_BIAS: Record<Rarity, number> = {

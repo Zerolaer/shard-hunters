@@ -14,6 +14,11 @@ import { CLASS_DEFS } from "@/lib/game/classes";
 import { applyClassChoice, migrateAssassinBuild, tagSaveItems } from "@/lib/game/classKit";
 import { canWearItem } from "@/lib/game/equipment";
 import {
+  INVENTORY_COLS,
+  INVENTORY_EXTRA_ROWS_MAX,
+  INVENTORY_ROW_COSTS,
+  INVENTORY_SIZE,
+  inventoryCapacity,
   LOCATION_BY_ID,
   locationEntryBm,
   LOCATIONS,
@@ -24,16 +29,23 @@ import {
 } from "@/lib/game/constants";
 import {
   applyPresetGemsToEquipment,
+  createBlessedMythicGem,
   createGem,
+  fusionNeed,
   GEM_NAME,
   GEMS_PER_FUSION,
   gemScore,
+  MYTHIC_TO_BLESSED,
   nextGemRank,
 } from "@/lib/game/gems";
 import {
   BLESSING,
   canBlessItem,
   canPunchItem,
+  consumeBlessingSparks,
+  consumeSocketHammers,
+  countBlessingSparks,
+  countSocketHammers,
   GEM_BAG_SIZE,
   rollSocketCount,
   SOCKET,
@@ -100,7 +112,7 @@ import {
   normalizeBossesState,
 } from "@/lib/game/bosses";
 import { emptySinBuild, emptySinCombat } from "@/lib/game/sin/state";
-import { enhanceCost, enhanceLevelAfterFail, enhanceSuccessChance } from "@/lib/game/enhance";
+import { enhanceCost, enhanceFailKind, enhanceLevelAfterFail, enhanceSuccessChance } from "@/lib/game/enhance";
 import {
   goldFromSell,
   formatFullDigits,
@@ -173,6 +185,9 @@ import {
   beginBossFight,
   leaveBossSession,
   craftEchoChest as craftEchoChestInTick,
+  craftEchoSpecific as craftEchoSpecificInTick,
+  craftPotion as craftPotionInTick,
+  usePotion as usePotionInTick,
 } from "@/lib/game/tick";
 import { isMaterialItem, type EchoChestRarity } from "@/lib/game/echoCraft";
 import type {
@@ -214,12 +229,16 @@ export interface GameStore extends GameData {
   punchItem: (itemId: string) => { ok: boolean; message: string };
   socketGem: (itemId: string, socketIndex: number, gemId: string) => { ok: boolean; message: string };
   unsocketGem: (itemId: string, socketIndex: number) => { ok: boolean; message: string };
-  fuseGems: (rank: GemRank) => { ok: boolean; message: string };
+  fuseGems: (rank: GemRank, gemIds?: string[]) => { ok: boolean; message: string };
   discardGem: (gemId: string) => void;
   craftEchoChest: (rarity: EchoChestRarity) => { ok: boolean; message: string };
+  craftEchoSpecific: (rarity: EchoChestRarity, slot: EquipSlot) => { ok: boolean; message: string };
+  craftPotion: (recipeId: string) => { ok: boolean; message: string };
+  usePotion: (inventoryIndex: number) => { ok: boolean; message: string };
   moveInventoryItem: (fromIndex: number, toIndex: number) => void;
   sortInventory: (mode: InventorySortMode) => void;
   compactInventory: () => void;
+  buyBagRow: () => { ok: boolean; message: string };
   setAutoSell: (rarity: Rarity, value: boolean) => void;
   setAutoSellEnabled: (value: boolean) => void;
   setHotbar: (index: number, skillId: SkillId | null) => void;
@@ -511,11 +530,21 @@ export const useGameStore = create<GameStore>()(
             result = { ok: true, message: `Успех! ${item.name} теперь +${item.enhanceLevel}` };
             pushLog(s, "enhance", result.message);
           } else {
-            const before = item.enhanceLevel;
-            item.enhanceLevel = enhanceLevelAfterFail(before);
-            const extra = item.enhanceLevel < before ? " Уровень заточки −1." : "";
-            result = { ok: false, message: `Неудача.${extra}` };
-            pushLog(s, "enhance", `${item.name}: ${result.message}`);
+            const fail = enhanceFailKind(item);
+            if (fail === "break") {
+              reclaimGems(s, item);
+              const name = item.name;
+              if (found.where === "inventory") s.inventory[found.index] = null;
+              else s.equipment[found.slot] = null;
+              result = { ok: false, message: `${name} разрушен при заточке!` };
+              pushLog(s, "enhance", result.message);
+            } else {
+              const before = item.enhanceLevel;
+              item.enhanceLevel = fail === "down" ? enhanceLevelAfterFail(before) : before;
+              const extra = item.enhanceLevel < before ? " Уровень заточки −1." : "";
+              result = { ok: false, message: `Неудача.${extra}` };
+              pushLog(s, "enhance", `${item.name}: ${result.message}`);
+            }
           }
         });
         return result;
@@ -532,14 +561,17 @@ export const useGameStore = create<GameStore>()(
             return;
           }
           const cost = BLESSING.cost;
-          const sparks = s.resources.blessing ?? 0;
+          const sparks = countBlessingSparks(s.inventory);
           if (s.resources.gold < cost.gold || s.resources.shards < cost.shards || sparks < cost.sparks) {
             result = { ok: false, message: "Не хватает искр или ресурсов" };
             return;
           }
           s.resources.gold -= cost.gold;
           s.resources.shards -= cost.shards;
-          s.resources.blessing = sparks - cost.sparks;
+          if (!consumeBlessingSparks(s.inventory, cost.sparks)) {
+            result = { ok: false, message: "Не хватает искр благословения" };
+            return;
+          }
           if (Math.random() < BLESSING.chance) {
             item.blessed = true;
             result = { ok: true, message: `${item.name} блеснут! Характеристики усилены.` };
@@ -562,14 +594,16 @@ export const useGameStore = create<GameStore>()(
             return;
           }
           const cost = SOCKET.cost;
-          const sparks = s.resources.blessing ?? 0;
-          if (s.resources.gold < cost.gold || s.resources.shards < cost.shards || sparks < cost.sparks) {
-            result = { ok: false, message: "Не хватает искр или ресурсов" };
+          const hammers = countSocketHammers(s.inventory);
+          if (s.resources.gold < cost.gold || hammers < cost.hammers) {
+            result = { ok: false, message: "Нужны молоток пробоя и золото" };
             return;
           }
           s.resources.gold -= cost.gold;
-          s.resources.shards -= cost.shards;
-          s.resources.blessing = sparks - cost.sparks;
+          if (!consumeSocketHammers(s.inventory, cost.hammers)) {
+            result = { ok: false, message: "Нет молотка пробоя" };
+            return;
+          }
           const count = rollSocketCount();
           item.sockets = Array.from({ length: count }, () => null);
           result = { ok: true, message: `Пробой: ${count} ${count === 1 ? "гнездо" : "гнезда"}` };
@@ -615,29 +649,55 @@ export const useGameStore = create<GameStore>()(
         });
         return result;
       },
-      fuseGems: (rank) => {
-        let result = { ok: false, message: "Нужно три камня одного грейда" };
+      fuseGems: (rank, gemIds) => {
+        let result = { ok: false, message: "Нужны камни одного грейда" };
         set((s) => {
-          const next = nextGemRank(rank);
-          if (!next) {
-            result = { ok: false, message: "Мифический — предел ладдера" };
-            return;
-          }
           if (!s.gems) s.gems = [];
-          // Spend the worst rolls first, so fusing never eats the gem the player
-          // was saving for a socket.
-          const fodder = s.gems
+          const need = fusionNeed(rank);
+          const pool = s.gems
             .map((gem, index) => ({ gem, index }))
-            .filter((row) => row.gem.rank === rank)
-            .sort((a, b) => gemScore(a.gem) - gemScore(b.gem))
-            .slice(0, GEMS_PER_FUSION);
-          if (fodder.length < GEMS_PER_FUSION) return;
-          for (const row of fodder.sort((a, b) => b.index - a.index)) {
+            .filter((row) => row.gem.rank === rank && !row.gem.blessed);
+
+          let fodder: typeof pool;
+          if (gemIds && gemIds.length > 0) {
+            const want = new Set(gemIds);
+            fodder = pool.filter((row) => want.has(row.gem.id));
+            if (fodder.length !== need) {
+              result = { ok: false, message: `Выберите ровно ${need} камней` };
+              return;
+            }
+          } else {
+            fodder = [...pool].sort((a, b) => gemScore(a.gem) - gemScore(b.gem)).slice(0, need);
+            if (fodder.length < need) {
+              result = {
+                ok: false,
+                message:
+                  rank === "mythic"
+                    ? `Нужно ${MYTHIC_TO_BLESSED} мифических`
+                    : `Нужно ${GEMS_PER_FUSION} камня`,
+              };
+              return;
+            }
+          }
+
+          for (const row of [...fodder].sort((a, b) => b.index - a.index)) {
             s.gems.splice(row.index, 1);
           }
-          const fused = createGem(next);
-          s.gems.push(fused);
-          result = { ok: true, message: `Скрещено: ${GEM_NAME[fused.rank]}` };
+
+          if (rank === "mythic") {
+            const fused = createBlessedMythicGem();
+            s.gems.push(fused);
+            result = { ok: true, message: `Благнутый камень: ${GEM_NAME.mythic}` };
+          } else {
+            const next = nextGemRank(rank);
+            if (!next) {
+              result = { ok: false, message: "Предел ладдера" };
+              return;
+            }
+            const fused = createGem(next);
+            s.gems.push(fused);
+            result = { ok: true, message: `Скрещено: ${GEM_NAME[fused.rank]}` };
+          }
           pushLog(s, "system", `Мастерская: ${result.message}`);
         });
         return result;
@@ -655,6 +715,28 @@ export const useGameStore = create<GameStore>()(
         });
         return result;
       },
+      craftEchoSpecific: (rarity, slot) => {
+        let result = { ok: false, message: "Не вышло" };
+        set((s) => {
+          result = craftEchoSpecificInTick(s, rarity, slot);
+        });
+        return result;
+      },
+      craftPotion: (recipeId) => {
+        let result = { ok: false, message: "Не вышло" };
+        set((s) => {
+          result = craftPotionInTick(s, recipeId);
+        });
+        return result;
+      },
+      usePotion: (inventoryIndex) => {
+        let result = { ok: false, message: "Не вышло" };
+        set((s) => {
+          result = usePotionInTick(s, inventoryIndex);
+          if (result.ok) pushLog(s, "system", result.message);
+        });
+        return result;
+      },
       moveInventoryItem: (fromIndex, toIndex) =>
         set((s) => {
           moveInventorySlots(s.inventory, fromIndex, toIndex);
@@ -667,6 +749,31 @@ export const useGameStore = create<GameStore>()(
         set((s) => {
           compactInventorySlots(s.inventory);
         }),
+      buyBagRow: () => {
+        let result = { ok: false, message: "Нельзя" };
+        set((s) => {
+          const bought = Math.max(0, Math.min(3, s.meta.bagExtraRows ?? 0));
+          if (bought >= INVENTORY_EXTRA_ROWS_MAX) {
+            result = { ok: false, message: "Все ряды уже куплены" };
+            return;
+          }
+          const cost = INVENTORY_ROW_COSTS[bought]!;
+          if (s.resources.gold < cost) {
+            result = { ok: false, message: `Нужно ${cost.toLocaleString("ru-RU")} золота` };
+            return;
+          }
+          s.resources.gold -= cost;
+          s.meta.bagExtraRows = bought + 1;
+          const need = inventoryCapacity(s.meta.bagExtraRows);
+          while (s.inventory.length < need) s.inventory.push(null);
+          result = {
+            ok: true,
+            message: `Куплен ряд ${bought + 1} (+${INVENTORY_COLS} ячеек)`,
+          };
+          pushLog(s, "system", result.message);
+        });
+        return result;
+      },
       setAutoSell: (rarity, value) =>
         set((s) => {
           syncAutoSellSettings(s);

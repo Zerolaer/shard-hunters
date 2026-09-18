@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Axe,
   Copy,
@@ -56,6 +58,14 @@ function formatTimer(effect: CombatEffect) {
   return "";
 }
 
+function tipBody(effect: CombatEffect) {
+  const timer = formatTimer(effect);
+  const desc = effect.description?.trim();
+  if (desc && timer) return `${desc}\n${timer}`;
+  if (desc) return desc;
+  return timer ? `${effect.name} · ${timer}` : effect.name;
+}
+
 export function EffectPills({
   effects,
   kind,
@@ -91,21 +101,13 @@ export function EffectPills({
       {shown.map((effect) => {
         const Icon = ICONS[effect.icon] ?? Sparkles;
         return (
-          <span
+          <EffectPill
             key={effect.id}
-            title={effect.name}
-            className={cn(
-              "inline-flex max-w-full items-center rounded-lg border leading-none",
-              pillSize,
-              kind === "debuff"
-                ? "border-white/10 bg-black/70 text-white/80 backdrop-blur-md"
-                : "border-white/14 bg-white/10 text-white",
-            )}
-          >
-            <Icon className="h-3 w-3 shrink-0 opacity-80" />
-            <span className="truncate font-medium">{effect.name}</span>
-            <span className="shrink-0 tabular-nums text-white/55">{formatTimer(effect)}</span>
-          </span>
+            effect={effect}
+            kind={kind}
+            pillSize={pillSize}
+            Icon={Icon}
+          />
         );
       })}
       {extra > 0 ? (
@@ -135,5 +137,55 @@ export function EffectPills({
         </span>
       ) : null}
     </div>
+  );
+}
+
+function EffectPill({
+  effect,
+  kind,
+  pillSize,
+  Icon,
+}: {
+  effect: CombatEffect;
+  kind: "buff" | "debuff";
+  pillSize: string;
+  Icon: LucideIcon;
+}) {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const tip = tipBody(effect);
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full cursor-default items-center rounded-lg border leading-none",
+        pillSize,
+        kind === "debuff"
+          ? "border-white/10 bg-black/70 text-white/80 backdrop-blur-md"
+          : "border-white/14 bg-white/10 text-white",
+      )}
+      onMouseEnter={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
+      onMouseLeave={() => setAnchor(null)}
+    >
+      <Icon className="h-3 w-3 shrink-0 opacity-80" />
+      <span className="truncate font-medium">{effect.name}</span>
+      <span className="shrink-0 tabular-nums text-white/55">{formatTimer(effect)}</span>
+      {anchor && typeof document !== "undefined"
+        ? createPortal(
+            <span
+              role="tooltip"
+              className="es-tooltip pointer-events-none fixed z-[200] w-max max-w-[260px] whitespace-pre-line px-2.5 py-1.5 text-[11px] font-normal leading-snug text-white/85"
+              style={{
+                left: Math.min(anchor.left + anchor.width / 2, window.innerWidth - 16),
+                top: Math.max(8, anchor.top - 8),
+                transform: "translate(-50%, -100%)",
+              }}
+            >
+              <strong className="font-medium text-white">{effect.name}</strong>
+              {"\n"}
+              {tip}
+            </span>,
+            document.body,
+          )
+        : null}
+    </span>
   );
 }

@@ -437,8 +437,8 @@ body {
   justify-content: center;
   gap: 0.4rem;
   min-width: 0;
-  min-height: 40px;
-  padding: 0.45rem 0.35rem 0.55rem;
+  min-height: 48px;
+  padding: 0.55rem 0.35rem 0.65rem;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -463,26 +463,36 @@ body {
 
 .game-nav-tab.is-active {
   color: #fff;
+  background: linear-gradient(
+    180deg,
+    transparent 35%,
+    rgba(52, 211, 153, 0.07) 78%,
+    rgba(52, 211, 153, 0.16) 100%
+  );
 }
 
 .game-nav-tab.is-active::after {
   content: "";
   position: absolute;
-  left: 12%;
-  right: 12%;
+  left: 18%;
+  right: 18%;
   bottom: 0;
   height: 2px;
   border-radius: 99px;
-  background: var(--accent);
+  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.85), transparent);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.35);
 }
 
 .game-nav-tab svg {
-  opacity: 0.75;
+  opacity: 0.85;
+  fill: currentColor;
+  stroke-width: 1.5px;
 }
 
 .game-nav-tab.is-active svg {
-  color: var(--accent);
+  color: #6ee7b7;
   opacity: 1;
+  fill: currentColor;
 }
 
 @media (max-width: 1280px) {
@@ -490,8 +500,8 @@ body {
     flex-direction: column;
     gap: 0.2rem;
     font-size: 10px;
-    min-height: 44px;
-    padding: 0.35rem 0.2rem 0.45rem;
+    min-height: 52px;
+    padding: 0.4rem 0.2rem 0.5rem;
   }
 
   .game-nav-tab span {

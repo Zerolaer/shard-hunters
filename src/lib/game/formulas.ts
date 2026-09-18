@@ -14,6 +14,7 @@ import {
 } from "./balance";
 import { CLASS_DEFS } from "./classes";
 import { guildCombatBonuses } from "./guild";
+import { potionCombatBonuses } from "./potions";
 import { SKILLS } from "./constants";
 import { itemGemStat, socketedGems } from "./gems";
 import { rand } from "./rng";
@@ -29,6 +30,7 @@ import type {
   EquipSlot,
   GuildState,
   Item,
+  PotionBuffState,
   Rarity,
 } from "./types";
 
@@ -207,6 +209,7 @@ export function statsOf(state: {
     skillRanks?: Partial<Record<string, number>>;
     artRanks?: Partial<Record<string, number>>;
   };
+  meta?: { potionBuffs?: PotionBuffState[] };
 }) {
   const sum = (r?: Partial<Record<string, number>>) =>
     Object.values(r ?? {}).reduce<number>((s, n) => s + (n ?? 0), 0);
@@ -218,6 +221,7 @@ export function statsOf(state: {
     state.sinBuild?.ranks,
     state.sinBuild?.mastery ?? 0,
     sum(state.sinBuild?.skillRanks) + sum(state.sinBuild?.artRanks),
+    state.meta?.potionBuffs,
   );
 }
 
@@ -229,6 +233,7 @@ export function deriveStats(
   sinRanks: Record<string, number> = {},
   sinMastery = 0,
   sinSkillRankSum = 0,
+  potionBuffs?: PotionBuffState[] | null,
 ): DerivedStats {
   const gear = collectGear(equipment);
   const talents = collectTalentBonuses(talentRanks);
@@ -253,11 +258,14 @@ export function deriveStats(
   };
   const cls = character.classId ? CLASS_DEFS[character.classId].passive : null;
   const guildB = guildCombatBonuses(guild);
+  const potionB = potionCombatBonuses(potionBuffs);
   bonus.lifesteal += cls?.lifesteal ?? 0;
-  bonus.attack += guildB.attack;
+  bonus.attack += guildB.attack + potionB.attack;
   bonus.health += guildB.health;
-  bonus.defense += guildB.defense;
-  bonus.skillHaste += guildB.skillHaste;
+  bonus.defense += guildB.defense + potionB.defense;
+  bonus.skillHaste += guildB.skillHaste + potionB.skillHaste;
+  bonus.critChance += potionB.critChance;
+  bonus.accuracy += potionB.accuracy;
   const str = character.strength + gear.strength + bonus.strength;
   const agi = character.agility + gear.agility + bonus.agility + (cls?.agility ?? 0);
   const end = character.endurance + gear.endurance + bonus.endurance;
@@ -418,11 +426,11 @@ export function oreFromSalvage(item: Item) {
 export function formatNumber(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}m`;
   if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n >= 1000) return n.toLocaleString("ru-RU");
+  if (n >= 1000) return Math.round(n).toLocaleString("ru-RU");
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-/** Full digits with ru-RU grouping. Never abbreviate combat power (БМ). */
+/** Full digits with thin spaces: 30 000 (never abbreviate combat power / HP / DPS). */
 export function formatFullDigits(n: number) {
   return Math.round(n).toLocaleString("ru-RU");
 }

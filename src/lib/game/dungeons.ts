@@ -106,10 +106,20 @@ const HALL_BRACKETS = [
   { minLevel: 80, baseLevel: 82 },
   { minLevel: 90, baseLevel: 92 },
   { minLevel: 100, baseLevel: 100 },
-  /** Overboost ladder — bmScale opens 200k→1M halls past open-world L100. */
-  { minLevel: 120, baseLevel: 125, bmScale: 3.6 },
-  { minLevel: 150, baseLevel: 140, bmScale: 5.4 },
-  { minLevel: 180, baseLevel: 155, bmScale: 8 },
+  /**
+   * Overboost ladder past L100 — denser steps (~1.3–1.4× BM) instead of the old
+   * 65k → 307k cliff from a single bmScale jump.
+   */
+  { minLevel: 105, baseLevel: 108, bmScale: 1.25 },
+  { minLevel: 110, baseLevel: 112, bmScale: 1.55 },
+  { minLevel: 115, baseLevel: 118, bmScale: 1.95 },
+  { minLevel: 120, baseLevel: 125, bmScale: 2.45 },
+  { minLevel: 130, baseLevel: 130, bmScale: 3.1 },
+  { minLevel: 140, baseLevel: 135, bmScale: 3.9 },
+  { minLevel: 150, baseLevel: 140, bmScale: 4.9 },
+  { minLevel: 165, baseLevel: 148, bmScale: 6.2 },
+  { minLevel: 180, baseLevel: 155, bmScale: 7.8 },
+  { minLevel: 195, baseLevel: 165, bmScale: 9.6 },
   { minLevel: 210, baseLevel: 175, bmScale: 11.5 },
 ] as const;
 
