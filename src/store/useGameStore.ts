@@ -207,8 +207,8 @@ import type {
 } from "@/lib/game/types";
 
 export interface GameStore extends GameData {
-  tick: (dt: number) => void;
-  applyOfflineProgress: () => void;
+  tick: (dt: number, opts?: { maxGameSec?: number }) => void;
+  applyOfflineProgress: (opts?: { maxGameSec?: number }) => void;
   dismissOffline: () => void;
   toggleAutoBattle: () => void;
   setAutoBattle: (v: boolean) => void;
@@ -305,13 +305,13 @@ export const useGameStore = create<GameStore>()(
   persist(
     immer((set) => ({
       ...createInitialState(),
-      tick: (dt) =>
+      tick: (dt, opts) =>
         set((s) => {
-          tickGame(s, dt);
+          tickGame(s, dt, opts);
         }),
-      applyOfflineProgress: () =>
+      applyOfflineProgress: (opts) =>
         set((s) => {
-          applyOffline(s);
+          applyOffline(s, Date.now(), opts);
         }),
       dismissOffline: () =>
         set((s) => {
